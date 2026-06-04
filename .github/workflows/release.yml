@@ -24,6 +24,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Install Tauri CLI
+        run: npm install -g @tauri-apps/cli
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -43,13 +46,13 @@ jobs:
           yes | sdkmanager --install 'platforms;android-34' 'build-tools;34.0.0' 'ndk;26.1.10909125' 'cmake;3.22.1'
 
       - name: Install Tauri CLI
-        run: cargo install tauri-cli --version '^2'
+        run: npm install -g @tauri-apps/cli
 
       - name: Build Android APK
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: cargo tauri android build --target aarch64 --apk
+        run: npx tauri android build --target aarch64 --apk
 
       - name: Get version from tag
         id: get_version
