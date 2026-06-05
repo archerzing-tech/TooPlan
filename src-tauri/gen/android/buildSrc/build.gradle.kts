@@ -12,8 +12,7 @@ gradlePlugin {
 }
 
 repositories {
-    maven { setUrl("https://maven.aliyun.com/repository/google") }
-    maven { setUrl("https://maven.aliyun.com/repository/public") }
+    // Use official Google and Maven Central repos directly for CI reliability.
     google()
     mavenCentral()
 }

@@ -24,9 +24,6 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Install Tauri CLI
-        run: npm install -g @tauri-apps/cli
-
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -52,11 +49,24 @@ jobs:
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: npx tauri android build --target aarch64 --apk
+        run: npx tauri android build --apk
 
       - name: Get version from tag
         id: get_version
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Rename APK
+        run: |
+          VERSION="${{ steps.get_version.outputs.VERSION }}"
+          APK_DIR="src-tauri/gen/android/app/build/outputs/apk"
+          # Find the built APK and rename it
+          APK_FILE=$(find "$APK_DIR" -name '*.apk' -not -path '*/debug/*' | head -1)
+          if [ -z "$APK_FILE" ]; then
+            echo "ERROR: No APK found in $APK_DIR"
+            exit 1
+          fi
+          echo "Found APK: $APK_FILE"
+          mv "$APK_FILE" "$APK_DIR/TooPlan-v${VERSION}.apk"
 
       - name: Upload APK to Release
         uses: softprops/action-gh-release@v2
@@ -70,7 +80,6 @@ jobs:
 
             ### APK Download
             - [TooPlan-v${{ steps.get_version.outputs.VERSION }}.apk](TooPlan-v${{ steps.get_version.outputs.VERSION }}.apk)
-          files: |
-            src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk
+          files: src-tauri/gen/android/app/build/outputs/apk/TooPlan-v${{ steps.get_version.outputs.VERSION }}.apk
           draft: false
           prerelease: false

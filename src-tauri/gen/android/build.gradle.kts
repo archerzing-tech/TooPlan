@@ -1,7 +1,7 @@
 buildscript {
     repositories {
-        maven { setUrl("https://maven.aliyun.com/repository/google") }
-        maven { setUrl("https://maven.aliyun.com/repository/public") }
+        // Use official Google and Maven Central repos directly for CI reliability.
+        // For local development in China, configure Aliyun mirrors via ~/.gradle/init.gradle
         google()
         mavenCentral()
     }
@@ -13,8 +13,6 @@ buildscript {
 
 allprojects {
     repositories {
-        maven { setUrl("https://maven.aliyun.com/repository/google") }
-        maven { setUrl("https://maven.aliyun.com/repository/public") }
         google()
         mavenCentral()
     }
