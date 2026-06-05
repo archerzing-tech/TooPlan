@@ -45,11 +45,31 @@ jobs:
       - name: Install Tauri CLI
         run: npm install -g @tauri-apps/cli
 
+      - name: Generate signing keystore
+        run: |
+          KEYSTORE_DIR="src-tauri/gen/android/app"
+          KEYSTORE_FILE="$KEYSTORE_DIR/tooplan.keystore"
+          if [ ! -f "$KEYSTORE_FILE" ]; then
+            echo "Generating keystore at $KEYSTORE_FILE..."
+            keytool -genkey -v -keystore "$KEYSTORE_FILE" \
+              -alias tooplan \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "${ANDROID_KEYSTORE_PASSWORD:-tooplan123}" \
+              -keypass "${ANDROID_KEY_PASSWORD:-tooplan123}" \
+              -dname "CN=TooPlan, OU=Development, O=TooPlan, L=, S=, C="
+            echo "Keystore generated successfully"
+          else
+            echo "Keystore already exists"
+          fi
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
       - name: Build Android APK
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: npx tauri android build --apk
+        run: npx tauri android build --target aarch64 --apk
 
       - name: Get version from tag
         id: get_version
@@ -59,8 +79,12 @@ jobs:
         run: |
           VERSION="${{ steps.get_version.outputs.VERSION }}"
           APK_DIR="src-tauri/gen/android/app/build/outputs/apk"
-          # Find the built APK and rename it
-          APK_FILE=$(find "$APK_DIR" -name '*.apk' -not -path '*/debug/*' | head -1)
+          # Find the built APK - with --target aarch64 it's in arm64-v8a/release/
+          # Fall back to any APK not in debug/
+          APK_FILE=$(find "$APK_DIR" -name '*.apk' -path '*/arm64-v8a/release/*' | head -1)
+          if [ -z "$APK_FILE" ]; then
+            APK_FILE=$(find "$APK_DIR" -name '*.apk' -not -path '*/debug/*' | head -1)
+          fi
           if [ -z "$APK_FILE" ]; then
             echo "ERROR: No APK found in $APK_DIR"
             exit 1
