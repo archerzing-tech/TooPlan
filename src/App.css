@@ -94,16 +94,16 @@ body {
   gap: 12px;
 }
 
-.header-bell {
+.header-icon {
   flex-shrink: 0;
   filter: drop-shadow(0 2px 8px rgba(108, 99, 255, 0.3));
 }
 
-.header-left:hover .header-bell {
-  animation: bellSwing 0.6s ease-in-out;
+.header-left:hover .header-icon {
+  animation: iconSwing 0.6s ease-in-out;
 }
 
-@keyframes bellSwing {
+@keyframes iconSwing {
   0%,
   100% {
     transform: rotate(0deg);
@@ -344,6 +344,7 @@ body {
 
 .day-card-body {
   padding: 8px 12px;
+  min-height: 20px;
 }
 
 .day-empty {
@@ -359,12 +360,53 @@ body {
 .event-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   padding: 8px 10px;
   border-radius: var(--radius-xs);
   transition: var(--transition);
   animation: fadeIn 0.2s ease-out;
   border-left: 3px solid transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.event-item[draggable="true"] {
+  cursor: grab;
+}
+
+.event-item[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.event-item.dragging {
+  opacity: 0.35;
+  background: var(--surface-hover);
+  border-left-color: var(--primary);
+}
+
+.event-item.drag-over {
+  border-left-color: var(--primary);
+  background: rgba(108, 99, 255, 0.08);
+  box-shadow: 0 0 0 2px rgba(108, 99, 255, 0.2);
+  transform: translateX(4px);
+}
+
+.drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 24px;
+  color: var(--text-muted);
+  opacity: 0.3;
+  transition: var(--transition);
+  touch-action: none;
+}
+
+.event-item:hover .drag-handle,
+.event-item:focus-within .drag-handle {
+  opacity: 0.7;
 }
 
 @keyframes fadeIn {
@@ -503,6 +545,59 @@ body {
   .event-item:hover .event-actions,
   .event-item:focus-within .event-actions {
     opacity: 1;
+  }
+}
+
+/* ──────────── Drag drop zone bottom ──────────── */
+
+.drop-zone-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  margin: 4px 0;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  transition: var(--transition);
+}
+
+.drop-zone-bottom.drag-over {
+  border-color: var(--primary);
+  background: rgba(108, 99, 255, 0.06);
+  color: var(--primary);
+}
+
+/* ──────────── Touch drag floating clone ──────────── */
+
+.touch-drag-clone {
+  display: none;
+  position: fixed;
+  z-index: 9999;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(1.05);
+  background: var(--surface);
+  color: var(--text);
+  padding: 10px 16px;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18), 0 2px 8px rgba(0, 0, 0, 0.1);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  max-width: 260px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-left: 3px solid var(--primary);
+  opacity: 0.92;
+  transition: opacity 0.15s ease;
+}
+
+@media (prefers-color-scheme: dark) {
+  .touch-drag-clone {
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.25);
   }
 }
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import "./App.css";
 
 interface PlanItem {
@@ -8,6 +8,7 @@ interface PlanItem {
   date: string; // ISO "YYYY-MM-DD"
   time?: string; // "HH:MM" for reminders
   createdAt: number;
+  sortOrder: number; // for drag-reordering within a day
 }
 
 type MainTab = "schedule" | "history";
@@ -117,6 +118,8 @@ interface EventItemProps {
   rebuilding: boolean;
   rebuildDate: string;
   rebuildTime: string;
+  isDragging: boolean;
+  isDragOver: boolean;
   onEditTextChange: (v: string) => void;
   onEditTimeChange: (v: string) => void;
   onEditTypeChange: (t: "event" | "reminder") => void;
@@ -130,6 +133,14 @@ interface EventItemProps {
   onRebuildTimeChange: (v: string) => void;
   onSaveRebuild: () => void;
   onCancelRebuild: () => void;
+  onDragStart: (e: React.DragEvent) => void;
+  onDragOver: (e: React.DragEvent) => void;
+  onDragLeave: () => void;
+  onDrop: (e: React.DragEvent) => void;
+  onDragEnd: () => void;
+  onTouchDragStart: (id: string, e: React.TouchEvent) => void;
+  onTouchDragMove: (e: React.TouchEvent) => void;
+  onTouchDragEnd: (e: React.TouchEvent) => void;
 }
 
 function EventItem({
@@ -141,6 +152,8 @@ function EventItem({
   rebuilding,
   rebuildDate,
   rebuildTime,
+  isDragging,
+  isDragOver,
   onEditTextChange,
   onEditTimeChange,
   onEditTypeChange,
@@ -154,6 +167,14 @@ function EventItem({
   onRebuildTimeChange,
   onSaveRebuild,
   onCancelRebuild,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDragEnd,
+  onTouchDragStart,
+  onTouchDragMove,
+  onTouchDragEnd,
 }: EventItemProps) {
   const urgency = getUrgency(item);
   const isPast = urgency === "expired";
@@ -192,8 +213,34 @@ function EventItem({
     );
   }
 
+  const canDrag = !editing;
+
   return (
-    <div className={`event-item ${isPast ? "past" : ""} urgency-${urgency}`}>
+    <div
+      className={`event-item ${isPast ? "past" : ""} urgency-${urgency} ${isDragging ? "dragging" : ""} ${isDragOver ? "drag-over" : ""}`}
+      data-item-id={item.id}
+      draggable={canDrag}
+      onDragStart={canDrag ? onDragStart : undefined}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
+      onTouchStart={canDrag ? (e) => onTouchDragStart(item.id, e) : undefined}
+      onTouchMove={canDrag ? onTouchDragMove : undefined}
+      onTouchEnd={canDrag ? onTouchDragEnd : undefined}
+    >
+      {canDrag && (
+        <span className="drag-handle" title="拖拽排序">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+            <circle cx="8" cy="6" r="1.5" />
+            <circle cx="16" cy="6" r="1.5" />
+            <circle cx="8" cy="12" r="1.5" />
+            <circle cx="16" cy="12" r="1.5" />
+            <circle cx="8" cy="18" r="1.5" />
+            <circle cx="16" cy="18" r="1.5" />
+          </svg>
+        </span>
+      )}
       {editing ? (
         <div className="event-edit-wrapper">
           <div className="event-edit-row">
@@ -307,6 +354,8 @@ interface DayCardProps {
   newItemText: string;
   newItemType: "event" | "reminder";
   newItemTime: string;
+  dragId: string | null;
+  dragOverId: string | null;
   onEditTextChange: (v: string) => void;
   onEditTimeChange: (v: string) => void;
   onEditTypeChange: (t: "event" | "reminder") => void;
@@ -325,6 +374,12 @@ interface DayCardProps {
   newItemTypeChange: (t: "event" | "reminder") => void;
   newItemTimeChange: (v: string) => void;
   onAddItem: (date: string) => void;
+  onMoveItem: (dragId: string, targetId: string, position: "before" | "after") => void;
+  onSetDragId: (id: string | null) => void;
+  onSetDragOverId: (id: string | null) => void;
+  onTouchDragStart: (id: string, e: React.TouchEvent) => void;
+  onTouchDragMove: (e: React.TouchEvent) => void;
+  onTouchDragEnd: (e: React.TouchEvent) => void;
   isToday?: boolean;
 }
 
@@ -342,6 +397,8 @@ function DayCard({
   newItemText,
   newItemType,
   newItemTime,
+  dragId,
+  dragOverId,
   onEditTextChange,
   onEditTimeChange,
   onEditTypeChange,
@@ -360,6 +417,12 @@ function DayCard({
   newItemTypeChange,
   newItemTimeChange,
   onAddItem,
+  onMoveItem,
+  onSetDragId,
+  onSetDragOverId,
+  onTouchDragStart,
+  onTouchDragMove,
+  onTouchDragEnd,
   isToday,
 }: DayCardProps) {
   const isPast = isDateBeforeToday(date);
@@ -392,6 +455,8 @@ function DayCard({
             rebuilding={rebuildingId === item.id}
             rebuildDate={rebuildDate}
             rebuildTime={rebuildTime}
+            isDragging={dragId === item.id}
+            isDragOver={dragOverId === item.id}
             onEditTextChange={onEditTextChange}
             onEditTimeChange={onEditTimeChange}
             onEditTypeChange={onEditTypeChange}
@@ -405,8 +470,67 @@ function DayCard({
             onRebuildTimeChange={onRebuildTimeChange}
             onSaveRebuild={onSaveRebuild}
             onCancelRebuild={onCancelRebuild}
+            onDragStart={(e) => {
+              e.dataTransfer.setData("text/plain", item.id);
+              e.dataTransfer.effectAllowed = "move";
+              onSetDragId(item.id);
+            }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              if (dragId && dragId !== item.id) {
+                onSetDragOverId(item.id);
+              }
+            }}
+            onDragLeave={() => {
+              if (dragOverId === item.id) {
+                onSetDragOverId(null);
+              }
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              const draggedId = e.dataTransfer.getData("text/plain");
+              if (draggedId && draggedId !== item.id) {
+                onMoveItem(draggedId, item.id, "before");
+              }
+              onSetDragId(null);
+              onSetDragOverId(null);
+            }}
+            onDragEnd={() => {
+              onSetDragId(null);
+              onSetDragOverId(null);
+            }}
+            onTouchDragStart={onTouchDragStart}
+            onTouchDragMove={onTouchDragMove}
+            onTouchDragEnd={onTouchDragEnd}
           />
         ))}
+
+        {/* Drop zone at the end of the list */}
+        {dragId && items.length > 0 && (
+          <div
+            className={`drop-zone-bottom ${dragOverId === "__bottom__" ? "drag-over" : ""}`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              onSetDragOverId("__bottom__");
+            }}
+            onDragLeave={() => {
+              if (dragOverId === "__bottom__") onSetDragOverId(null);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              const draggedId = e.dataTransfer.getData("text/plain");
+              if (draggedId) {
+                onMoveItem(draggedId, items[items.length - 1].id, "after");
+              }
+              onSetDragId(null);
+              onSetDragOverId(null);
+            }}
+          >
+            <span>拖放到此处</span>
+          </div>
+        )}
 
         {isAdding && (
           <div className="add-item-row">
@@ -483,6 +607,160 @@ function DayCard({
   );
 }
 
+/* ──────────── Grouped items list ──────────── */
+
+interface DraggableEventListProps {
+  items: PlanItem[];
+  editingItemId: string | null;
+  editText: string;
+  editTime: string;
+  editType: "event" | "reminder";
+  rebuildingId: string | null;
+  rebuildDate: string;
+  rebuildTime: string;
+  dragId: string | null;
+  dragOverId: string | null;
+  onEditTextChange: (v: string) => void;
+  onEditTimeChange: (v: string) => void;
+  onEditTypeChange: (t: "event" | "reminder") => void;
+  onStartEdit: (id: string) => void;
+  onSaveEdit: () => void;
+  onCancelEdit: () => void;
+  onDelete: (id: string) => void;
+  onCopy: (id: string) => void;
+  onStartRebuild: (id: string) => void;
+  onRebuildDateChange: (v: string) => void;
+  onRebuildTimeChange: (v: string) => void;
+  onSaveRebuild: () => void;
+  onCancelRebuild: () => void;
+  onMoveItem: (dragId: string, targetId: string, position: "before" | "after") => void;
+  onSetDragId: (id: string | null) => void;
+  onSetDragOverId: (id: string | null) => void;
+  onTouchDragStart: (id: string, e: React.TouchEvent) => void;
+  onTouchDragMove: (e: React.TouchEvent) => void;
+  onTouchDragEnd: (e: React.TouchEvent) => void;
+}
+
+function DraggableEventList({
+  items,
+  editingItemId,
+  editText,
+  editTime,
+  editType,
+  rebuildingId,
+  rebuildDate,
+  rebuildTime,
+  dragId,
+  dragOverId,
+  onEditTextChange,
+  onEditTimeChange,
+  onEditTypeChange,
+  onStartEdit,
+  onSaveEdit,
+  onCancelEdit,
+  onDelete,
+  onCopy,
+  onStartRebuild,
+  onRebuildDateChange,
+  onRebuildTimeChange,
+  onSaveRebuild,
+  onCancelRebuild,
+  onMoveItem,
+  onSetDragId,
+  onSetDragOverId,
+  onTouchDragStart,
+  onTouchDragMove,
+  onTouchDragEnd,
+}: DraggableEventListProps) {
+  return (
+    <>
+      {items.map((item) => (
+        <EventItem
+          key={item.id}
+          item={item}
+          editing={editingItemId === item.id}
+          editText={editText}
+          editTime={editTime}
+          editType={editType}
+          rebuilding={rebuildingId === item.id}
+          rebuildDate={rebuildDate}
+          rebuildTime={rebuildTime}
+          isDragging={dragId === item.id}
+          isDragOver={dragOverId === item.id}
+          onEditTextChange={onEditTextChange}
+          onEditTimeChange={onEditTimeChange}
+          onEditTypeChange={onEditTypeChange}
+          onStartEdit={() => onStartEdit(item.id)}
+          onSaveEdit={onSaveEdit}
+          onCancelEdit={onCancelEdit}
+          onDelete={() => onDelete(item.id)}
+          onCopy={() => onCopy(item.id)}
+          onStartRebuild={() => onStartRebuild(item.id)}
+          onRebuildDateChange={onRebuildDateChange}
+          onRebuildTimeChange={onRebuildTimeChange}
+          onSaveRebuild={onSaveRebuild}
+          onCancelRebuild={onCancelRebuild}
+          onDragStart={(e) => {
+            e.dataTransfer.setData("text/plain", item.id);
+            e.dataTransfer.effectAllowed = "move";
+            onSetDragId(item.id);
+          }}
+          onDragOver={(e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            if (dragId && dragId !== item.id) {
+              onSetDragOverId(item.id);
+            }
+          }}
+          onDragLeave={() => {
+            if (dragOverId === item.id) onSetDragOverId(null);
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            const draggedId = e.dataTransfer.getData("text/plain");
+            if (draggedId && draggedId !== item.id) {
+              onMoveItem(draggedId, item.id, "before");
+            }
+            onSetDragId(null);
+            onSetDragOverId(null);
+          }}
+          onDragEnd={() => {
+            onSetDragId(null);
+            onSetDragOverId(null);
+          }}
+          onTouchDragStart={onTouchDragStart}
+          onTouchDragMove={onTouchDragMove}
+          onTouchDragEnd={onTouchDragEnd}
+        />
+      ))}
+      {dragId && items.length > 0 && (
+        <div
+          className={`drop-zone-bottom ${dragOverId === "__bottom__" ? "drag-over" : ""}`}
+          onDragOver={(e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            onSetDragOverId("__bottom__");
+          }}
+          onDragLeave={() => {
+            if (dragOverId === "__bottom__") onSetDragOverId(null);
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            const draggedId = e.dataTransfer.getData("text/plain");
+            if (draggedId) {
+              onMoveItem(draggedId, items[items.length - 1].id, "after");
+            }
+            onSetDragId(null);
+            onSetDragOverId(null);
+          }}
+        >
+          <span>拖放到此处</span>
+        </div>
+      )}
+    </>
+  );
+}
+
 /* ──────────── Grouped items ──────────── */
 
 interface ItemGroup {
@@ -501,6 +779,11 @@ function groupByDate(items: PlanItem[]): ItemGroup[] {
     .map(([date, evs]) => ({ date, items: evs }));
 }
 
+/** Sort items by sortOrder (ascending = first to last) */
+function sortByOrder(items: PlanItem[]): PlanItem[] {
+  return [...items].sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
 /* ──────────── App ──────────── */
 
 const STORAGE_KEY = "tooplan-items";
@@ -509,12 +792,13 @@ function migrateOldData(): PlanItem[] {
   try {
     const old = JSON.parse(localStorage.getItem("tooplan-events") || "null");
     if (Array.isArray(old)) {
-      const migrated: PlanItem[] = old.map((e: any) => ({
+      const migrated: PlanItem[] = old.map((e: any, idx: number) => ({
         id: e.id || crypto.randomUUID(),
         type: "event",
         text: e.text || "",
         date: e.date || getToday(),
         createdAt: e.createdAt || Date.now(),
+        sortOrder: idx * 1000,
       }));
       localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
       localStorage.removeItem("tooplan-events");
@@ -528,7 +812,12 @@ function App() {
   const [items, setItems] = useState<PlanItem[]>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
-      if (Array.isArray(saved)) return saved;
+      if (Array.isArray(saved)) {
+        return saved.map((e: any, idx: number) => ({
+          ...e,
+          sortOrder: e.sortOrder ?? idx * 1000,
+        }));
+      }
     } catch {}
     return migrateOldData();
   });
@@ -546,12 +835,149 @@ function App() {
   const [rebuildingId, setRebuildingId] = useState<string | null>(null);
   const [rebuildDate, setRebuildDate] = useState(getToday());
   const [rebuildTime, setRebuildTime] = useState(getNowTime());
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+
+  /* ── Touch drag state (refs to avoid re-renders on touch move) ── */
+
+  const touchState = useRef({
+    active: false,
+    dragId: "",
+    startX: 0,
+    startY: 0,
+  });
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const cloneRef = useRef<HTMLDivElement>(null);
+
+  // Stable refs for global listener cleanup
+  const onGlobalTouchMoveRef = useRef<(e: TouchEvent) => void>(() => {});
+  const onGlobalTouchEndRef = useRef<(e: TouchEvent) => void>(() => {});
+
+  // Clean up global listeners on unmount
+  useEffect(() => {
+    return () => {
+      clearTimeout(longPressTimer.current);
+      document.removeEventListener("touchmove", onGlobalTouchMoveRef.current);
+      document.removeEventListener("touchend", onGlobalTouchEndRef.current);
+    };
+  }, []);
+
+  function onGlobalTouchMove(e: TouchEvent) {
+    e.preventDefault();
+    const touch = e.touches[0];
+    const x = touch.clientX;
+    const y = touch.clientY;
+
+    // Move clone
+    if (cloneRef.current) {
+      cloneRef.current.style.left = `${x}px`;
+      cloneRef.current.style.top = `${y}px`;
+    }
+
+    // Detect element under finger
+    if (cloneRef.current) cloneRef.current.style.display = "none";
+    const el = document.elementFromPoint(x, y);
+    if (cloneRef.current) cloneRef.current.style.display = "block";
+
+    const itemEl = el?.closest("[data-item-id]") as HTMLElement | null;
+    if (itemEl) {
+      const targetId = itemEl.dataset.itemId;
+      if (targetId && targetId !== touchState.current.dragId) {
+        setDragOverId(targetId);
+        return;
+      }
+    }
+    setDragOverId(null);
+  }
+
+  const moveItemRef = useRef<(id: string, target: string, pos: "before" | "after") => void>(null!);
+
+  function onGlobalTouchEnd(e: TouchEvent) {
+    const touch = e.changedTouches[0];
+    const x = touch.clientX;
+    const y = touch.clientY;
+    const dragIdValue = touchState.current.dragId;
+
+    // Cleanup global listeners
+    document.removeEventListener("touchmove", onGlobalTouchMoveRef.current);
+    document.removeEventListener("touchend", onGlobalTouchEndRef.current);
+
+    // Hide clone to detect element under finger
+    if (cloneRef.current) cloneRef.current.style.display = "none";
+    const el = document.elementFromPoint(x, y);
+    if (cloneRef.current) cloneRef.current.style.display = "none";
+
+    if (touchState.current.active && dragIdValue) {
+      const itemEl = el?.closest("[data-item-id]") as HTMLElement | null;
+      if (itemEl) {
+        const targetId = itemEl.dataset.itemId;
+        if (targetId && targetId !== dragIdValue) {
+          moveItemRef.current(dragIdValue, targetId, "before");
+        }
+      }
+    }
+
+    // Cleanup
+    touchState.current.active = false;
+    setDragId(null);
+    setDragOverId(null);
+  }
+
+  const handleTouchDragStart = (id: string, e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    touchState.current = {
+      active: false,
+      dragId: id,
+      startX: touch.clientX,
+      startY: touch.clientY,
+    };
+
+    clearTimeout(longPressTimer.current);
+    longPressTimer.current = setTimeout(() => {
+      touchState.current.active = true;
+      setDragId(id);
+
+      // Show floating clone
+      if (cloneRef.current) {
+        const item = items.find((i) => i.id === id);
+        cloneRef.current.textContent = item?.text || "";
+        cloneRef.current.style.display = "block";
+        cloneRef.current.style.left = `${touch.clientX}px`;
+        cloneRef.current.style.top = `${touch.clientY}px`;
+      }
+
+      // Assign current handlers to refs for consistent cleanup
+      onGlobalTouchMoveRef.current = onGlobalTouchMove;
+      onGlobalTouchEndRef.current = onGlobalTouchEnd;
+      // Add global listeners using refs (ensures removeEventListener works)
+      document.addEventListener("touchmove", onGlobalTouchMoveRef.current, { passive: false });
+      document.addEventListener("touchend", onGlobalTouchEndRef.current);
+    }, 400);
+  };
+
+  const handleTouchDragMove = (e: React.TouchEvent) => {
+    if (!touchState.current.active && longPressTimer.current) {
+      const touch = e.touches[0];
+      const dx = touch.clientX - touchState.current.startX;
+      const dy = touch.clientY - touchState.current.startY;
+      if (Math.abs(dx) > 12 || Math.abs(dy) > 12) {
+        clearTimeout(longPressTimer.current);
+        longPressTimer.current = undefined;
+      }
+    }
+  };
+
+  const handleTouchDragEnd = (_e: React.TouchEvent) => {
+    clearTimeout(longPressTimer.current);
+  };
+
+  /* ── localStorage ── */
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
   }, [items]);
 
-  /* ── visualViewport: add bottom padding when keyboard opens ── */
+  /* ── visualViewport ── */
 
   useEffect(() => {
     const vv = window.visualViewport;
@@ -570,6 +996,8 @@ function App() {
     const trimmed = newItemText.trim();
     if (!trimmed || newItemDate !== date) return;
     if (newItemType === "reminder" && !newItemTime) return;
+    const dayItems = items.filter((e) => e.date === date);
+    const maxOrder = dayItems.reduce((max, e) => Math.max(max, e.sortOrder), 0);
     const item: PlanItem = {
       id: crypto.randomUUID(),
       type: newItemType,
@@ -577,6 +1005,7 @@ function App() {
       date,
       time: newItemType === "reminder" ? newItemTime : undefined,
       createdAt: Date.now(),
+      sortOrder: maxOrder + 1000,
     };
     setItems((prev) => [item, ...prev]);
     setNewItemText("");
@@ -598,7 +1027,7 @@ function App() {
     setEditType(ev.type);
   };
 
-  const saveEdit = () => {
+  const doSaveEdit = () => {
     if (!editingItemId) return;
     const trimmed = editText.trim();
     if (!trimmed) {
@@ -618,7 +1047,7 @@ function App() {
     setEditType("event");
   };
 
-  const cancelEdit = () => {
+  const doCancelEdit = () => {
     setEditingItemId(null);
     setEditText("");
     setEditTime("");
@@ -628,10 +1057,13 @@ function App() {
   const copyItem = (id: string) => {
     const original = items.find((e) => e.id === id);
     if (!original) return;
+    const dayItems = items.filter((e) => e.date === original.date);
+    const maxOrder = dayItems.reduce((max, e) => Math.max(max, e.sortOrder), 0);
     const copy: PlanItem = {
       ...original,
       id: crypto.randomUUID(),
       createdAt: Date.now(),
+      sortOrder: maxOrder + 1000,
     };
     setItems((prev) => [copy, ...prev]);
   };
@@ -646,10 +1078,12 @@ function App() {
 
   const saveRebuild = () => {
     if (!rebuildingId) return;
+    const dayItems = items.filter((e) => e.date === rebuildDate);
+    const maxOrder = dayItems.reduce((max, e) => Math.max(max, e.sortOrder), 0);
     setItems((prev) =>
       prev.map((e) =>
         e.id === rebuildingId
-          ? { ...e, date: rebuildDate, time: rebuildTime, createdAt: Date.now() }
+          ? { ...e, date: rebuildDate, time: rebuildTime, createdAt: Date.now(), sortOrder: maxOrder + 1000 }
           : e,
       ),
     );
@@ -660,26 +1094,57 @@ function App() {
     setRebuildingId(null);
   };
 
+  /* ── drag reorder ── */
+
+  const moveItem = (draggedId: string, targetId: string, position: "before" | "after") => {
+    setItems((prev) => {
+      const dragged = prev.find((e) => e.id === draggedId);
+      const target = prev.find((e) => e.id === targetId);
+      if (!dragged || !target) return prev;
+
+      const sameDateItems = prev.filter((e) => e.date === target.date).sort((a, b) => a.sortOrder - b.sortOrder);
+      const targetIndex = sameDateItems.findIndex((e) => e.id === targetId);
+      if (targetIndex === -1) return prev;
+
+      let newOrder: number;
+      if (position === "before") {
+        if (targetIndex === 0) {
+          newOrder = sameDateItems[0].sortOrder - 1000;
+        } else {
+          newOrder = (sameDateItems[targetIndex - 1].sortOrder + sameDateItems[targetIndex].sortOrder) / 2;
+        }
+      } else {
+        if (targetIndex >= sameDateItems.length - 1) {
+          newOrder = sameDateItems[sameDateItems.length - 1].sortOrder + 1000;
+        } else {
+          newOrder = (sameDateItems[targetIndex].sortOrder + sameDateItems[targetIndex + 1].sortOrder) / 2;
+        }
+      }
+
+      return prev.map((e) =>
+        e.id === draggedId ? { ...e, sortOrder: newOrder, date: target.date } : e,
+      );
+    });
+  };
+  moveItemRef.current = moveItem;
+
   /* ── derived data ── */
 
   const today = getToday();
   const weekDates = getWeekDates();
 
-  const getItemsForDay = (d: string) => items.filter((e) => e.date === d);
+  const getItemsForDay = (d: string) => sortByOrder(items.filter((e) => e.date === d));
 
   const todayItems = getItemsForDay(today);
 
-  // Future: items after this week
   const futureItems = items.filter((e) => e.date > weekDates[6]);
   const futureGroups = groupByDate(futureItems);
 
-  // History: only expired items, sorted newest-first
   const historyItems = items
     .filter((e) => isItemExpired(e))
-    .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
+    .sort((a, b) => b.date.localeCompare(a.date) || a.sortOrder - b.sortOrder);
   const historyGroups = groupByDate(historyItems);
 
-  /* ── future date picker ── */
   const [futurePickerDate, setFuturePickerDate] = useState(getNextWeekday());
   const [futurePickerText, setFuturePickerText] = useState("");
   const [futurePickerType, setFuturePickerType] = useState<"event" | "reminder">("event");
@@ -687,28 +1152,27 @@ function App() {
 
   return (
     <div className="app">
+      {/* Floating clone for touch drag */}
+      <div className="touch-drag-clone" ref={cloneRef} />
+
       {/* ── Header ── */}
       <header className="header">
         <div className="header-left">
-          <svg className="header-bell" width="30" height="30" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+          <svg className="header-icon" width="30" height="30" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
             <defs>
-              <linearGradient id="bellG" x1="0%" y1="0%" x2="0%" y2="100%">
+              <linearGradient id="iconGrad" x1="0%" y1="0%" x2="100%" y2="100%">
                 <stop offset="0%" stopColor="#6c63ff" />
                 <stop offset="100%" stopColor="#ff6b9d" />
               </linearGradient>
             </defs>
-            <ellipse cx="256" cy="165" rx="100" ry="65" fill="url(#bellG)" />
-            <path d="M156 165 L170 280 Q256 300 342 280 L356 165 Z" fill="url(#bellG)" />
-            <ellipse cx="256" cy="395" rx="110" ry="15" fill="#6c63ff" />
-            <ellipse cx="256" cy="385" rx="55" ry="10" fill="var(--bg)" />
-            <circle cx="256" cy="435" r="14" fill="#6c63ff" />
-            <line x1="256" y1="400" x2="256" y2="422" stroke="#6c63ff" strokeWidth="3" />
+            <rect x="42" y="42" width="428" height="428" rx="96" ry="96" fill="url(#iconGrad)" />
+            <path d="M 130 140 h 90 v 20 h -35 v 200 h -20 v -200 h -35 z" fill="white" />
+            <path d="M 260 140 h 80 a 55 55 0 1 1 0 100 h -60 v 120 h -20 z" fill="white" />
           </svg>
           <h1>TooPlan</h1>
         </div>
       </header>
 
-      {/* ── Main tab bar ── */}
       <nav className="main-tabs">
         <button
           className={`main-tab ${mainTab === "schedule" ? "active" : ""}`}
@@ -726,7 +1190,6 @@ function App() {
         </button>
       </nav>
 
-      {/* ── Schedule sub-tabs ── */}
       {mainTab === "schedule" && (
         <nav className="sub-tabs">
           {(["today", "week", "future"] as ScheduleTab[]).map((tab) => (
@@ -741,9 +1204,7 @@ function App() {
         </nav>
       )}
 
-      {/* ── Content ── */}
       <main className="content">
-        {/* ── Schedule: Today ── */}
         {mainTab === "schedule" && scheduleTab === "today" && (
           <div className="day-view">
             <DayCard
@@ -761,12 +1222,14 @@ function App() {
               newItemText={newItemText}
               newItemType={newItemType}
               newItemTime={newItemTime}
+              dragId={dragId}
+              dragOverId={dragOverId}
               onEditTextChange={setEditText}
               onEditTimeChange={setEditTime}
               onEditTypeChange={setEditType}
               onStartEdit={startEdit}
-              onSaveEdit={saveEdit}
-              onCancelEdit={cancelEdit}
+              onSaveEdit={doSaveEdit}
+              onCancelEdit={doCancelEdit}
               onDelete={deleteItem}
               onCopy={copyItem}
               onStartRebuild={startRebuild}
@@ -779,11 +1242,16 @@ function App() {
               newItemTypeChange={setNewItemType}
               newItemTimeChange={setNewItemTime}
               onAddItem={addItem}
+              onMoveItem={moveItem}
+              onSetDragId={setDragId}
+              onSetDragOverId={setDragOverId}
+              onTouchDragStart={handleTouchDragStart}
+              onTouchDragMove={handleTouchDragMove}
+              onTouchDragEnd={handleTouchDragEnd}
             />
           </div>
         )}
 
-        {/* ── Schedule: Week ── */}
         {mainTab === "schedule" && scheduleTab === "week" && (
           <div className="week-grid">
             {weekDates.map((date) => (
@@ -803,12 +1271,14 @@ function App() {
                 newItemText={newItemText}
                 newItemType={newItemType}
                 newItemTime={newItemTime}
+                dragId={dragId}
+                dragOverId={dragOverId}
                 onEditTextChange={setEditText}
                 onEditTimeChange={setEditTime}
                 onEditTypeChange={setEditType}
                 onStartEdit={startEdit}
-                onSaveEdit={saveEdit}
-                onCancelEdit={cancelEdit}
+                onSaveEdit={doSaveEdit}
+                onCancelEdit={doCancelEdit}
                 onDelete={deleteItem}
                 onCopy={copyItem}
                 onStartRebuild={startRebuild}
@@ -821,12 +1291,17 @@ function App() {
                 newItemTypeChange={setNewItemType}
                 newItemTimeChange={setNewItemTime}
                 onAddItem={addItem}
+                onMoveItem={moveItem}
+                onSetDragId={setDragId}
+                onSetDragOverId={setDragOverId}
+                onTouchDragStart={handleTouchDragStart}
+                onTouchDragMove={handleTouchDragMove}
+                onTouchDragEnd={handleTouchDragEnd}
               />
             ))}
           </div>
         )}
 
-        {/* ── Schedule: Future ── */}
         {mainTab === "schedule" && scheduleTab === "future" && (
           <div className="grouped-list">
             <div className="future-add-card">
@@ -855,6 +1330,7 @@ function App() {
                         date: futurePickerDate,
                         time: futurePickerType === "reminder" ? futurePickerTime : undefined,
                         createdAt: Date.now(),
+                        sortOrder: Date.now(),
                       };
                       setItems((prev) => [item, ...prev]);
                       setFuturePickerText("");
@@ -875,6 +1351,7 @@ function App() {
                         date: futurePickerDate,
                         time: futurePickerType === "reminder" ? futurePickerTime : undefined,
                         createdAt: Date.now(),
+                        sortOrder: Date.now(),
                       };
                       setItems((prev) => [item, ...prev]);
                       setFuturePickerText("");
@@ -931,32 +1408,37 @@ function App() {
                     <span className="date-value">{group.date}</span>
                   </div>
                   <div className="date-group-body">
-                    {group.items.map((item) => (
-                      <EventItem
-                        key={item.id}
-                        item={item}
-                        editing={editingItemId === item.id}
-                        editText={editText}
-                        editTime={editTime}
-                        editType={editType}
-                        rebuilding={rebuildingId === item.id}
-                        rebuildDate={rebuildDate}
-                        rebuildTime={rebuildTime}
-                        onEditTextChange={setEditText}
-                        onEditTimeChange={setEditTime}
-                        onEditTypeChange={setEditType}
-                        onStartEdit={() => startEdit(item.id)}
-                        onSaveEdit={saveEdit}
-                        onCancelEdit={cancelEdit}
-                        onDelete={() => deleteItem(item.id)}
-                        onCopy={() => copyItem(item.id)}
-                        onStartRebuild={() => startRebuild(item.id)}
-                        onRebuildDateChange={setRebuildDate}
-                        onRebuildTimeChange={setRebuildTime}
-                        onSaveRebuild={saveRebuild}
-                        onCancelRebuild={cancelRebuild}
-                      />
-                    ))}
+                    <DraggableEventList
+                      items={sortByOrder(group.items)}
+                      editingItemId={editingItemId}
+                      editText={editText}
+                      editTime={editTime}
+                      editType={editType}
+                      rebuildingId={rebuildingId}
+                      rebuildDate={rebuildDate}
+                      rebuildTime={rebuildTime}
+                      dragId={dragId}
+                      dragOverId={dragOverId}
+                      onEditTextChange={setEditText}
+                      onEditTimeChange={setEditTime}
+                      onEditTypeChange={setEditType}
+                      onStartEdit={startEdit}
+                      onSaveEdit={doSaveEdit}
+                      onCancelEdit={doCancelEdit}
+                      onDelete={deleteItem}
+                      onCopy={copyItem}
+                      onStartRebuild={startRebuild}
+                      onRebuildDateChange={setRebuildDate}
+                      onRebuildTimeChange={setRebuildTime}
+                      onSaveRebuild={saveRebuild}
+                      onCancelRebuild={cancelRebuild}
+                      onMoveItem={moveItem}
+                      onSetDragId={setDragId}
+                      onSetDragOverId={setDragOverId}
+                      onTouchDragStart={handleTouchDragStart}
+                      onTouchDragMove={handleTouchDragMove}
+                      onTouchDragEnd={handleTouchDragEnd}
+                    />
                   </div>
                 </div>
               ))
@@ -964,7 +1446,6 @@ function App() {
           </div>
         )}
 
-        {/* ── History ── */}
         {mainTab === "history" && (
           <div className="grouped-list">
             {historyGroups.length === 0 ? (
@@ -985,32 +1466,37 @@ function App() {
                       <span className="date-value">{group.date}</span>
                     </div>
                     <div className="date-group-body">
-                      {group.items.map((item) => (
-                        <EventItem
-                          key={item.id}
-                          item={item}
-                          editing={editingItemId === item.id}
-                          editText={editText}
-                          editTime={editTime}
-                          editType={editType}
-                          rebuilding={rebuildingId === item.id}
-                          rebuildDate={rebuildDate}
-                          rebuildTime={rebuildTime}
-                          onEditTextChange={setEditText}
-                          onEditTimeChange={setEditTime}
-                          onEditTypeChange={setEditType}
-                          onStartEdit={() => startEdit(item.id)}
-                          onSaveEdit={saveEdit}
-                          onCancelEdit={cancelEdit}
-                          onDelete={() => deleteItem(item.id)}
-                          onCopy={() => copyItem(item.id)}
-                          onStartRebuild={() => startRebuild(item.id)}
-                          onRebuildDateChange={setRebuildDate}
-                          onRebuildTimeChange={setRebuildTime}
-                          onSaveRebuild={saveRebuild}
-                          onCancelRebuild={cancelRebuild}
-                        />
-                      ))}
+                      <DraggableEventList
+                        items={sortByOrder(group.items)}
+                        editingItemId={editingItemId}
+                        editText={editText}
+                        editTime={editTime}
+                        editType={editType}
+                        rebuildingId={rebuildingId}
+                        rebuildDate={rebuildDate}
+                        rebuildTime={rebuildTime}
+                        dragId={dragId}
+                        dragOverId={dragOverId}
+                        onEditTextChange={setEditText}
+                        onEditTimeChange={setEditTime}
+                        onEditTypeChange={setEditType}
+                        onStartEdit={startEdit}
+                        onSaveEdit={doSaveEdit}
+                        onCancelEdit={doCancelEdit}
+                        onDelete={deleteItem}
+                        onCopy={copyItem}
+                        onStartRebuild={startRebuild}
+                        onRebuildDateChange={setRebuildDate}
+                        onRebuildTimeChange={setRebuildTime}
+                        onSaveRebuild={saveRebuild}
+                        onCancelRebuild={cancelRebuild}
+                        onMoveItem={moveItem}
+                        onSetDragId={setDragId}
+                        onSetDragOverId={setDragOverId}
+                        onTouchDragStart={handleTouchDragStart}
+                        onTouchDragMove={handleTouchDragMove}
+                        onTouchDragEnd={handleTouchDragEnd}
+                      />
                     </div>
                   </div>
                 );

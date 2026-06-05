@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Generate a bell icon as a PNG file and SVG favicon."""
-import struct, zlib, math, sys, os
+"""Generate a modern app icon for TooPlan.
+Creates a rounded-square icon with a purple-to-pink gradient background
+and a white "TP" monogram.
+"""
+import struct, zlib, math, os
 
 def create_png(width, height, data):
-    """Create PNG from raw RGBA pixel data."""
     def chunk(ctype, cdata):
         c = ctype + cdata
         crc = struct.pack('>I', zlib.crc32(c) & 0xffffffff)
@@ -21,212 +23,229 @@ def smoothstep(edge0, edge1, x):
     t = max(0.0, min(1.0, (x - edge0) / (edge1 - edge0)))
     return t * t * (3 - 2 * t)
 
-def sd_ellipse(px, py, cx, cy, rx, ry):
-    """Signed distance to an ellipse. Negative means inside."""
-    dx = px - cx
-    dy = py - cy
-    return math.sqrt((dx / rx) ** 2 + (dy / ry) ** 2) - 1.0
+def sd_rounded_box(px, py, cx, cy, w, h, r):
+    """Signed distance to a rounded box centered at (cx, cy) with half-width w, half-height h, corner radius r."""
+    dx = abs(px - cx) - w + r
+    dy = abs(py - cy) - h + r
+    if dx < 0 and dy < 0:
+        return -min(w - abs(px - cx), h - abs(py - cy))
+    return math.sqrt(max(dx, 0) ** 2 + max(dy, 0) ** 2) - r
 
-def sd_circle(px, py, cx, cy, r):
-    dx = px - cx
-    dy = py - cy
-    return math.sqrt(dx * dx + dy * dy) - r
-
-def sd_box(px, py, x1, y1, x2, y2):
-    """Signed distance to an axis-aligned box."""
-    dx = max(x1 - px, 0, px - x2)
-    dy = max(y1 - py, 0, py - y2)
-    return math.sqrt(dx * dx + dy * dy)
-
-def inside_ring(px, py, cx, cy, r_outer, r_inner=None):
-    d = math.sqrt((px - cx) ** 2 + (py - cy) ** 2)
-    if r_inner is None:
-        return d <= r_outer, d - r_outer
-    if d > r_outer:
-        return False, d - r_outer
-    if d < r_inner:
-        return False, r_inner - d
-    return True, min(d - r_inner, r_outer - d)
-
-def generate_bell_pixels(size):
-    """Generate RGBA pixel data for a bell icon."""
+def generate_icon_pixels(size):
+    """Generate RGBA pixel data for a modern TooPlan app icon."""
     cx = size * 0.5
-    cy = size * 0.42  # Center of bell body
-    
-    # Bell dimensions (as fraction of size)
-    dome_rx = 0.22
-    dome_ry = 0.16
-    body_narrow = 0.17  # Narrowest half-width
-    body_bottom = 0.23  # Bottom half-width
-    body_top_y = 0.28
-    body_narrow_y = 0.55
-    body_bottom_y = 0.78
-    rim_thickness = 0.025
-    clapper_radius = 0.028
-    clapper_y = 0.85
-    
+    cy = size * 0.5
+
+    # Colors
+    purple_r, purple_g, purple_b = 108, 99, 255    # #6c63ff
+    pink_r, pink_g, pink_b = 255, 107, 157         # #ff6b9d
+    white_r, white_g, white_b = 255, 255, 255
+
     data = []
-    
-    # Primary color (purple from the app theme)
-    r1, g1, b1 = 108, 99, 255
-    # Accent (pinkish)
-    r2, g2, b2 = 255, 107, 157
-    
+
     for py in range(size):
         for px in range(size):
-            # Normalize coordinates
-            nx = (px - cx) / size
-            ny = (py - cy * size) / size
-            
-            inside = False
-            dist = 999.0
-            color_r, color_g, color_b = 0, 0, 0
-            
-            # 1. Dome: bottom half of an ellipse
-            if ny >= 0:
-                d_dome = sd_ellipse(px, py, cx, cy - dome_ry * size * 0.3, dome_rx * size, dome_ry * size)
-                if d_dome < 0:
-                    # Check that we're in the bottom half of the ellipse
-                    rel_y = (py - (cy - dome_ry * size * 0.3)) / (dome_ry * size)
-                    if rel_y >= 0:
-                        inside = True
-                        dist = d_dome
-                        t = (ny + 0.25) / 0.6
-                        color_r = int(r1 + (r2 - r1) * t)
-                        color_g = int(g1 + (g2 - g1) * t)
-                        color_b = int(b1 + (b2 - b1) * t)
-            
-            # 2. Body: trapezoid that narrows then widens
-            # Calculate the body boundaries at this y
-            if ny > -0.02 and ny < 0.52:
-                # Progress from top to narrow point
-                if ny < 0.27:  # Top to narrow
-                    progress = ny / 0.27  # 0 at top, 1 at narrow
-                    half_w = dome_rx + (body_narrow - dome_rx) * progress
-                else:  # Narrow to bottom
-                    progress = (ny - 0.27) / 0.25  # 0 at narrow, 1 at bottom
-                    half_w = body_narrow + (body_bottom - body_narrow) * progress
-                
-                left = cx - half_w * size
-                right = cx + half_w * size
-                
-                # Add a slight curve to the sides
-                side_curve = math.sin(ny * math.pi) * 0.008 * size
-                
-                if px >= left + side_curve and px <= right - side_curve:
-                    inside = True
-                    dist = min(px - left, right - px)
-                    t = (ny + 0.1) / 0.55
-                    color_r = int(r1 + (r2 - r1) * t)
-                    color_g = int(g1 + (g2 - g1) * t)
-                    color_b = int(b1 + (b2 - b1) * t)
-            
-            # 3. Bottom rim (thick curved bottom)
-            rim_cy = body_bottom_y * size + cy - size * 0.42
-            d_rim = sd_ellipse(px, py, cx, rim_cy, body_bottom * size, rim_thickness * size * 3)
-            if d_rim < 0:
-                inside = True
-                dist = d_rim
-                color_r, color_g, color_b = r1, g1, b1
-            
-            # 4. Sound hole (cutout in the bottom of the bell)
-            hole_cy = rim_cy - rim_thickness * size * 1.5
-            d_hole = sd_ellipse(px, py, cx, hole_cy, body_bottom * size * 0.55, rim_thickness * size * 2.5)
-            if d_hole < 0:
-                # Only cut out if we're also inside the body
-                # Check if at bottom of bell
-                inside = False
-            
-            # 5. Clapper
-            d_clap = sd_circle(px, py, cx, clapper_y * size + cy - size * 0.42 + rim_thickness * size, clapper_radius * size)
-            if d_clap < 0:
-                inside = True
-                dist = d_clap
-            
-            # 6. Clapper string (thin line from clapper to bell top)
-            string_top = rim_cy - rim_thickness * size * 2.5
-            string_bottom = clapper_y * size + cy - size * 0.42 + rim_thickness * size - clapper_radius * size
-            if px >= cx - 2 and px <= cx + 2 and py >= string_bottom and py <= string_top:
-                inside = True
-            
-            if inside:
-                alpha = 255
-                data.extend([color_r, color_g, color_b, alpha])
-            else:
+            # Rounded square (superellipse for smoother corners)
+            corner_radius = size * 0.22
+            d = sd_rounded_box(px, py, cx, cy, size * 0.42, size * 0.42, corner_radius)
+
+            if d > 0:
+                # Outside the icon - transparent
                 data.extend([0, 0, 0, 0])
-    
+                continue
+
+            # Inside the icon - gradient background
+            # Gradient from top-left (purple) to bottom-right (pink)
+            progress_x = px / size
+            progress_y = py / size
+            t = (progress_x + progress_y) * 0.5
+
+            # Ease the gradient
+            t = smoothstep(0.15, 0.85, t)
+
+            bg_r = int(purple_r + (pink_r - purple_r) * t)
+            bg_g = int(purple_g + (pink_g - purple_g) * t)
+            bg_b = int(purple_b + (pink_b - purple_b) * t)
+
+            # Antialiasing on edges
+            alpha = 255
+            if d > -1.5:
+                alpha = int(255 * max(0, min(1, 1 - (d + 1.5) / (-1.5))))
+
+            # Draw "TP" monogram
+            # We use a simple approach: detect if pixel is inside the letter shapes
+            # Normalize coordinates relative to center (0-1 range, centered)
+            nx = (px - cx) / size  # -0.5 to 0.5
+            ny = (py - cy) / size  # -0.5 to 0.5
+
+            in_letter = False
+            letter_color = (white_r, white_g, white_b)
+
+            # "T" letter (left side)
+            # Horizontal bar (top of T)
+            t_left = -0.22
+            t_right = -0.02
+            t_top = -0.28
+            t_bar_bottom = -0.18
+
+            # Vertical stem (middle of T)
+            v_left = -0.14
+            v_right = -0.04
+            v_top = -0.18
+            v_bottom = 0.20
+
+            if (nx >= t_left and nx <= t_right and ny >= t_top and ny <= t_bar_bottom) or \
+               (nx >= v_left and nx <= v_right and ny >= v_top and ny <= v_bottom):
+                in_letter = True
+
+            # "P" letter (right side)
+            # Vertical stem
+            p_stem_left = 0.04
+            p_stem_right = 0.12
+            p_stem_top = -0.28
+            p_stem_bottom = 0.20
+
+            # Upper curve of P (top-right part)
+            p_curve_cx = 0.12
+            p_curve_cy = -0.08
+            p_curve_rx = 0.10
+            p_curve_ry = 0.14
+
+            # Check if pixel is inside the P
+            in_p_stem = (nx >= p_stem_left and nx <= p_stem_right and ny >= p_stem_top and ny <= p_stem_bottom)
+
+            # For the P curve, use a filled ellipse approach
+            dx_p = (nx - p_curve_cx) / p_curve_rx
+            dy_p = (ny - p_curve_cy) / p_curve_ry
+            d_p = dx_p * dx_p + dy_p * dy_p
+
+            # The P curve: inside the ellipse, to the right of the stem, above the stem bottom
+            in_p_curve = d_p <= 1.0 and nx >= p_stem_right and ny <= p_stem_bottom - 0.02
+
+            # Cut out the inner part of P (the hole)
+            p_hole_cx = 0.15
+            p_hole_cy = -0.06
+            p_hole_rx = 0.055
+            p_hole_ry = 0.085
+            dx_h = (nx - p_hole_cx) / p_hole_rx
+            dy_h = (ny - p_hole_cy) / p_hole_ry
+            d_h = dx_h * dx_h + dy_h * dy_h
+            in_p_hole = d_h <= 1.0 and nx >= p_stem_right
+
+            if (in_p_stem or in_p_curve) and not in_p_hole:
+                in_letter = True
+
+            if in_letter:
+                # Smooth edges of letters
+                data.extend([white_r, white_g, white_b, alpha])
+            else:
+                data.extend([bg_r, bg_g, bg_b, alpha])
+
     return data
+
+def downscale(data, src_size, dst_size):
+    """Simple nearest-neighbor downscale."""
+    result = []
+    for py in range(dst_size):
+        for px in range(dst_size):
+            sx = int(px * src_size / dst_size)
+            sy = int(py * src_size / dst_size)
+            idx = (sy * src_size + sx) * 4
+            result.extend(data[idx:idx+4])
+    return result
 
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(script_dir)
     icons_dir = os.path.join(project_root, 'src-tauri', 'icons')
     public_dir = os.path.join(project_root, 'public')
-    
+
     os.makedirs(icons_dir, exist_ok=True)
     os.makedirs(public_dir, exist_ok=True)
-    
-    # Generate high-res PNG for Tauri icons
+
+    # Generate high-res icon
     size = 1024
-    print(f"Generating {size}x{size} bell icon PNG...")
-    data = generate_bell_pixels(size)
+    print(f"Generating {size}x{size} icon...")
+    data = generate_icon_pixels(size)
     png_data = create_png(size, size, data)
-    
+
     output_path = os.path.join(icons_dir, 'icon_1024x1024.png')
     with open(output_path, 'wb') as f:
         f.write(png_data)
     print(f"Saved: {output_path}")
-    
-    # Also save as the main icon for direct use
-    for name, sz in [('32x32.png', 32), ('128x128.png', 128), ('128x128@2x.png', 256), ('icon.png', 1024)]:
+
+    # Generate various icon sizes
+    sizes = [
+        ('32x32.png', 32),
+        ('64x64.png', 64),
+        ('128x128.png', 128),
+        ('128x128@2x.png', 256),
+        ('icon.png', 1024),
+    ]
+
+    for name, sz in sizes:
         if sz == size:
-            data_small = data
+            png_small = png_data
         else:
-            # Simple nearest-neighbor downscale
-            data_small = []
-            for py in range(sz):
-                for px in range(sz):
-                    sx = int(px * size / sz)
-                    sy = int(py * size / sz)
-                    idx = (sy * size + sx) * 4
-                    data_small.extend(data[idx:idx+4])
+            data_small = downscale(data, size, sz)
             png_small = create_png(sz, sz, data_small)
-        
+
         out = os.path.join(icons_dir, name)
         with open(out, 'wb') as f:
-            if sz == size:
-                f.write(png_data)
-            else:
-                f.write(png_small)
+            f.write(png_small)
         print(f"Saved: {out}")
-    
+
+    # Generate Windows icons (Square logos)
+    for name, sz in [('Square30x30Logo.png', 30), ('Square44x44Logo.png', 44),
+                      ('Square71x71Logo.png', 71), ('Square89x89Logo.png', 89),
+                      ('Square107x107Logo.png', 107), ('Square142x142Logo.png', 142),
+                      ('Square150x150Logo.png', 150), ('Square284x284Logo.png', 284),
+                      ('Square310x310Logo.png', 310), ('StoreLogo.png', 50)]:
+        data_small = downscale(data, size, sz)
+        png_small = create_png(sz, sz, data_small)
+        out = os.path.join(icons_dir, name)
+        with open(out, 'wb') as f:
+            f.write(png_small)
+        print(f"Saved: {out}")
+
     # Generate SVG favicon
     svg = '''<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
   <defs>
-    <linearGradient id="bellGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:#6c63ff;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#ff6b9d;stop-opacity:1" />
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6c63ff"/>
+      <stop offset="100%" stop-color="#ff6b9d"/>
     </linearGradient>
   </defs>
-  <!-- Bell dome -->
-  <ellipse cx="256" cy="165" rx="100" ry="65" fill="url(#bellGrad)" />
-  <!-- Bell body - trapezoid that narrows then widens -->
-  <path d="M 156 165 L 170 280 Q 256 300 342 280 L 356 165 Z" fill="url(#bellGrad)" />
-  <!-- Bell bottom rim -->
-  <ellipse cx="256" cy="395" rx="110" ry="15" fill="#6c63ff" />
-  <!-- Sound hole -->
-  <ellipse cx="256" cy="385" rx="55" ry="10" fill="#0f0f1a" />
-  <!-- Clapper -->
-  <circle cx="256" cy="435" r="14" fill="#6c63ff" />
-  <!-- Clapper string -->
-  <line x1="256" y1="400" x2="256" y2="422" stroke="#6c63ff" stroke-width="3" />
+  <!-- Background rounded square -->
+  <rect x="42" y="42" width="428" height="428" rx="96" ry="96" fill="url(#bgGrad)"/>    <!-- T letter -->
+  <path d="M 130 140 h 90 v 20 h -35 v 200 h -20 v -200 h -35 z" fill="white"/>
+  <!-- P letter -->
+  <path d="M 260 140 h 80 a 55 55 0 1 1 0 100 h -60 v 120 h -20 z" fill="white"/>
 </svg>'''
-    
+
     svg_path = os.path.join(public_dir, 'vite.svg')
     with open(svg_path, 'w') as f:
         f.write(svg)
     print(f"Saved: {svg_path}")
-    
+
+    # Also save a cleaner SVG for the app header
+    header_svg = '''<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bgGradH" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6c63ff"/>
+      <stop offset="100%" stop-color="#ff6b9d"/>
+    </linearGradient>
+  </defs>
+  <rect x="42" y="42" width="428" height="428" rx="96" ry="96" fill="url(#bgGradH)"/>
+  <path d="M 130 140 h 90 v 20 h -35 v 200 h -20 v -200 h -35 z" fill="white"/>
+  <path d="M 260 140 h 80 a 55 55 0 1 1 0 100 h -60 v 120 h -20 z" fill="white"/>
+</svg>'''
+
+    header_svg_path = os.path.join(icons_dir, 'icon.svg')
+    with open(header_svg_path, 'w') as f:
+        f.write(header_svg)
+    print(f"Saved: {header_svg_path}")
+
     print("Done! All icons generated.")
 
 if __name__ == '__main__':
