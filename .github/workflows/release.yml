@@ -54,21 +54,19 @@ jobs:
             keytool -genkey -v -keystore "$KEYSTORE_FILE" \
               -alias tooplan \
               -keyalg RSA -keysize 2048 -validity 10000 \
-              -storepass "${ANDROID_KEYSTORE_PASSWORD:-tooplan123}" \
-              -keypass "${ANDROID_KEY_PASSWORD:-tooplan123}" \
+              -storepass tooplan123 \
+              -keypass tooplan123 \
               -dname "CN=TooPlan, OU=Development, O=TooPlan, L=, S=, C="
             echo "Keystore generated successfully"
           else
             echo "Keystore already exists"
           fi
-        env:
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
       - name: Build Android APK
         env:
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          # These match the fallback defaults in src-tauri/gen/android/app/build.gradle.kts
+          ANDROID_KEYSTORE_PASSWORD: tooplan123
+          ANDROID_KEY_PASSWORD: tooplan123
         run: npx tauri android build --target aarch64 --apk
 
       - name: Get version from tag
