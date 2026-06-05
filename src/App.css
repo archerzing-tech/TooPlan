@@ -239,6 +239,7 @@ body {
   flex: 1;
   overflow-y: auto;
   padding: 8px 20px 20px;
+  padding-bottom: calc(20px + var(--keyboard-height, 0px));
   -webkit-overflow-scrolling: touch;
 }
 
@@ -552,6 +553,21 @@ body {
 }
 
 /* ──────────────── Edit / add rows ──────────────── */
+
+.event-edit-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.edit-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 4px;
+}
 
 .event-edit-row,
 .event-rebuild-row,

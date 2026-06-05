@@ -98,16 +98,28 @@ function getUrgency(item: PlanItem): Urgency {
   return "normal";
 }
 
+/* ──────────── Keyboard helper ──────────── */
+
+function scrollInputIntoView(e: React.FocusEvent<HTMLInputElement>) {
+  setTimeout(() => {
+    e.target.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, 350);
+}
+
 /* ──────────── Event item ──────────── */
 
 interface EventItemProps {
   item: PlanItem;
   editing: boolean;
   editText: string;
+  editTime: string;
+  editType: "event" | "reminder";
   rebuilding: boolean;
   rebuildDate: string;
   rebuildTime: string;
   onEditTextChange: (v: string) => void;
+  onEditTimeChange: (v: string) => void;
+  onEditTypeChange: (t: "event" | "reminder") => void;
   onStartEdit: () => void;
   onSaveEdit: () => void;
   onCancelEdit: () => void;
@@ -124,10 +136,14 @@ function EventItem({
   item,
   editing,
   editText,
+  editTime,
+  editType,
   rebuilding,
   rebuildDate,
   rebuildTime,
   onEditTextChange,
+  onEditTimeChange,
+  onEditTypeChange,
   onStartEdit,
   onSaveEdit,
   onCancelEdit,
@@ -152,12 +168,14 @@ function EventItem({
             value={rebuildDate}
             min={getToday()}
             onChange={(e) => onRebuildDateChange(e.target.value)}
+            onFocus={scrollInputIntoView}
           />
           <input
             type="time"
             className="rebuild-time-input"
             value={rebuildTime}
             onChange={(e) => onRebuildTimeChange(e.target.value)}
+            onFocus={scrollInputIntoView}
           />
           <button className="event-btn save-btn" onClick={onSaveRebuild} title="保存">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -177,29 +195,57 @@ function EventItem({
   return (
     <div className={`event-item ${isPast ? "past" : ""} urgency-${urgency}`}>
       {editing ? (
-        <div className="event-edit-row">
-          <input
-            className="event-edit-input"
-            type="text"
-            value={editText}
-            onChange={(e) => onEditTextChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") onSaveEdit();
-              if (e.key === "Escape") onCancelEdit();
-            }}
-            autoFocus
-            maxLength={200}
-          />
-          <button className="event-btn save-btn" onClick={onSaveEdit} title="保存">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M20 6L9 17l-5-5" />
-            </svg>
-          </button>
-          <button className="event-btn cancel-btn" onClick={onCancelEdit} title="取消">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
+        <div className="event-edit-wrapper">
+          <div className="event-edit-row">
+            <input
+              className="event-edit-input"
+              type="text"
+              value={editText}
+              onChange={(e) => onEditTextChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") onSaveEdit();
+                if (e.key === "Escape") onCancelEdit();
+              }}
+              onFocus={scrollInputIntoView}
+              autoFocus
+              maxLength={200}
+            />
+            {editType === "reminder" && (
+              <input
+                type="time"
+                className="add-time-input"
+                value={editTime}
+                onChange={(e) => onEditTimeChange(e.target.value)}
+                onFocus={scrollInputIntoView}
+              />
+            )}
+            <button className="event-btn save-btn" onClick={onSaveEdit} title="保存">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M20 6L9 17l-5-5" />
+              </svg>
+            </button>
+            <button className="event-btn cancel-btn" onClick={onCancelEdit} title="取消">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+          <div className="edit-meta-row">
+            <div className="add-type-toggle">
+              <button
+                className={`type-btn ${editType === "event" ? "active" : ""}`}
+                onClick={() => onEditTypeChange("event")}
+              >
+                事件
+              </button>
+              <button
+                className={`type-btn ${editType === "reminder" ? "active" : ""}`}
+                onClick={() => onEditTypeChange("reminder")}
+              >
+                提醒
+              </button>
+            </div>
+          </div>
         </div>
       ) : (
         <>
@@ -252,6 +298,8 @@ interface DayCardProps {
   items: PlanItem[];
   editingItemId: string | null;
   editText: string;
+  editTime: string;
+  editType: "event" | "reminder";
   rebuildingId: string | null;
   rebuildDate: string;
   rebuildTime: string;
@@ -260,6 +308,8 @@ interface DayCardProps {
   newItemType: "event" | "reminder";
   newItemTime: string;
   onEditTextChange: (v: string) => void;
+  onEditTimeChange: (v: string) => void;
+  onEditTypeChange: (t: "event" | "reminder") => void;
   onStartEdit: (id: string) => void;
   onSaveEdit: () => void;
   onCancelEdit: () => void;
@@ -283,6 +333,8 @@ function DayCard({
   items,
   editingItemId,
   editText,
+  editTime,
+  editType,
   rebuildingId,
   rebuildDate,
   rebuildTime,
@@ -291,6 +343,8 @@ function DayCard({
   newItemType,
   newItemTime,
   onEditTextChange,
+  onEditTimeChange,
+  onEditTypeChange,
   onStartEdit,
   onSaveEdit,
   onCancelEdit,
@@ -333,10 +387,14 @@ function DayCard({
             item={item}
             editing={editingItemId === item.id}
             editText={editText}
+            editTime={editTime}
+            editType={editType}
             rebuilding={rebuildingId === item.id}
             rebuildDate={rebuildDate}
             rebuildTime={rebuildTime}
             onEditTextChange={onEditTextChange}
+            onEditTimeChange={onEditTimeChange}
+            onEditTypeChange={onEditTypeChange}
             onStartEdit={() => onStartEdit(item.id)}
             onSaveEdit={onSaveEdit}
             onCancelEdit={onCancelEdit}
@@ -362,6 +420,7 @@ function DayCard({
                 if (e.key === "Enter") onAddItem(date);
                 if (e.key === "Escape") newItemDateChange(null);
               }}
+              onFocus={scrollInputIntoView}
               autoFocus
               maxLength={200}
             />
@@ -386,6 +445,7 @@ function DayCard({
                   className="add-time-input"
                   value={newItemTime}
                   onChange={(e) => newItemTimeChange(e.target.value)}
+                  onFocus={scrollInputIntoView}
                 />
               )}
             </div>
@@ -477,6 +537,8 @@ function App() {
   const [scheduleTab, setScheduleTab] = useState<ScheduleTab>("today");
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
+  const [editTime, setEditTime] = useState("");
+  const [editType, setEditType] = useState<"event" | "reminder">("event");
   const [newItemDate, setNewItemDate] = useState<string | null>(null);
   const [newItemText, setNewItemText] = useState("");
   const [newItemType, setNewItemType] = useState<"event" | "reminder">("event");
@@ -488,6 +550,19 @@ function App() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
   }, [items]);
+
+  /* ── visualViewport: add bottom padding when keyboard opens ── */
+
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const onResize = () => {
+      const keyboardHeight = window.innerHeight - vv.height;
+      document.documentElement.style.setProperty("--keyboard-height", `${keyboardHeight}px`);
+    };
+    vv.addEventListener("resize", onResize);
+    return () => vv.removeEventListener("resize", onResize);
+  }, []);
 
   /* ── item CRUD ── */
 
@@ -519,6 +594,8 @@ function App() {
     if (!ev) return;
     setEditingItemId(id);
     setEditText(ev.text);
+    setEditTime(ev.time || getNowTime());
+    setEditType(ev.type);
   };
 
   const saveEdit = () => {
@@ -529,15 +606,23 @@ function App() {
       return;
     }
     setItems((prev) =>
-      prev.map((e) => (e.id === editingItemId ? { ...e, text: trimmed } : e)),
+      prev.map((e) =>
+        e.id === editingItemId
+          ? { ...e, text: trimmed, type: editType, time: editType === "reminder" ? editTime : undefined }
+          : e,
+      ),
     );
     setEditingItemId(null);
     setEditText("");
+    setEditTime("");
+    setEditType("event");
   };
 
   const cancelEdit = () => {
     setEditingItemId(null);
     setEditText("");
+    setEditTime("");
+    setEditType("event");
   };
 
   const copyItem = (id: string) => {
@@ -667,6 +752,8 @@ function App() {
               items={todayItems}
               editingItemId={editingItemId}
               editText={editText}
+              editTime={editTime}
+              editType={editType}
               rebuildingId={rebuildingId}
               rebuildDate={rebuildDate}
               rebuildTime={rebuildTime}
@@ -675,6 +762,8 @@ function App() {
               newItemType={newItemType}
               newItemTime={newItemTime}
               onEditTextChange={setEditText}
+              onEditTimeChange={setEditTime}
+              onEditTypeChange={setEditType}
               onStartEdit={startEdit}
               onSaveEdit={saveEdit}
               onCancelEdit={cancelEdit}
@@ -705,6 +794,8 @@ function App() {
                 items={getItemsForDay(date)}
                 editingItemId={editingItemId}
                 editText={editText}
+                editTime={editTime}
+                editType={editType}
                 rebuildingId={rebuildingId}
                 rebuildDate={rebuildDate}
                 rebuildTime={rebuildTime}
@@ -713,6 +804,8 @@ function App() {
                 newItemType={newItemType}
                 newItemTime={newItemTime}
                 onEditTextChange={setEditText}
+                onEditTimeChange={setEditTime}
+                onEditTypeChange={setEditType}
                 onStartEdit={startEdit}
                 onSaveEdit={saveEdit}
                 onCancelEdit={cancelEdit}
@@ -744,6 +837,7 @@ function App() {
                   value={futurePickerDate}
                   min={getNextWeekday()}
                   onChange={(e) => setFuturePickerDate(e.target.value)}
+                  onFocus={scrollInputIntoView}
                 />
                 <input
                   className="add-item-input"
@@ -766,6 +860,7 @@ function App() {
                       setFuturePickerText("");
                     }
                   }}
+                  onFocus={scrollInputIntoView}
                   maxLength={200}
                 />
                 <button
@@ -814,6 +909,7 @@ function App() {
                     className="add-time-input"
                     value={futurePickerTime}
                     onChange={(e) => setFuturePickerTime(e.target.value)}
+                    onFocus={scrollInputIntoView}
                   />
                 )}
               </div>
@@ -841,10 +937,14 @@ function App() {
                         item={item}
                         editing={editingItemId === item.id}
                         editText={editText}
+                        editTime={editTime}
+                        editType={editType}
                         rebuilding={rebuildingId === item.id}
                         rebuildDate={rebuildDate}
                         rebuildTime={rebuildTime}
                         onEditTextChange={setEditText}
+                        onEditTimeChange={setEditTime}
+                        onEditTypeChange={setEditType}
                         onStartEdit={() => startEdit(item.id)}
                         onSaveEdit={saveEdit}
                         onCancelEdit={cancelEdit}
@@ -891,10 +991,14 @@ function App() {
                           item={item}
                           editing={editingItemId === item.id}
                           editText={editText}
+                          editTime={editTime}
+                          editType={editType}
                           rebuilding={rebuildingId === item.id}
                           rebuildDate={rebuildDate}
                           rebuildTime={rebuildTime}
                           onEditTextChange={setEditText}
+                          onEditTimeChange={setEditTime}
+                          onEditTypeChange={setEditType}
                           onStartEdit={() => startEdit(item.id)}
                           onSaveEdit={saveEdit}
                           onCancelEdit={cancelEdit}
