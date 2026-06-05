@@ -1,13 +1,15 @@
 {
   "name": "tooplan",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "tauri-android": "ANDROID_ABI_FILTER=arm64-v8a tauri android dev",
+    "tauri-android-emu": "ANDROID_ABI_FILTER=x86_64 tauri android dev"
   },
   "dependencies": {
     "react": "^19.1.0",
