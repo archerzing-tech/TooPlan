@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
 import "./App.css";
 
-interface PlanEvent {
+interface PlanItem {
   id: string;
+  type: "event" | "reminder";
   text: string;
   date: string; // ISO "YYYY-MM-DD"
+  time?: string; // "HH:MM" for reminders
   createdAt: number;
 }
 
@@ -16,6 +18,17 @@ type ScheduleTab = "today" | "week" | "future";
 function getToday(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function getNowTime(): string {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function getNextWeekday(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().split("T")[0];
 }
 
 function getWeekDates(): string[] {
@@ -34,7 +47,10 @@ function getWeekDates(): string[] {
   return dates;
 }
 
-const DAY_NAMES: Record<number, string> = { 0: "周日", 1: "周一", 2: "周二", 3: "周三", 4: "周四", 5: "周五", 6: "周六" };
+const DAY_NAMES: Record<number, string> = {
+  0: "周日", 1: "周一", 2: "周二", 3: "周三",
+  4: "周四", 5: "周五", 6: "周六",
+};
 
 function getDayName(dateStr: string): string {
   const d = new Date(dateStr + "T12:00:00");
@@ -50,33 +66,116 @@ function isDateBeforeToday(dateStr: string): boolean {
   return dateStr < getToday();
 }
 
+function isItemExpired(item: PlanItem): boolean {
+  if (item.type === "reminder" && item.time) {
+    return new Date(`${item.date}T${item.time}`) < new Date();
+  }
+  return isDateBeforeToday(item.date);
+}
+
+/* ──────────── Urgency / Color helpers ──────────── */
+
+type Urgency = "normal" | "warning" | "danger" | "expired";
+
+function getUrgency(item: PlanItem): Urgency {
+  if (item.type === "reminder" && item.time) {
+    const deadline = new Date(`${item.date}T${item.time}`);
+    const now = new Date();
+    const createdAt = new Date(item.createdAt);
+    const totalMs = deadline.getTime() - createdAt.getTime();
+    const remainingMs = deadline.getTime() - now.getTime();
+
+    if (now > deadline) return "expired";
+    if (remainingMs <= 2 * 60 * 60 * 1000) return "danger";
+    if (totalMs > 0) {
+      const elapsed = now.getTime() - createdAt.getTime();
+      if (elapsed / totalMs > 0.5) return "warning";
+    }
+    return "normal";
+  }
+
+  if (isDateBeforeToday(item.date)) return "expired";
+  return "normal";
+}
+
 /* ──────────── Event item ──────────── */
 
 interface EventItemProps {
-  event: PlanEvent;
+  item: PlanItem;
   editing: boolean;
   editText: string;
+  rebuilding: boolean;
+  rebuildDate: string;
+  rebuildTime: string;
   onEditTextChange: (v: string) => void;
   onStartEdit: () => void;
   onSaveEdit: () => void;
   onCancelEdit: () => void;
   onDelete: () => void;
-  isPast?: boolean;
+  onCopy: () => void;
+  onStartRebuild: () => void;
+  onRebuildDateChange: (v: string) => void;
+  onRebuildTimeChange: (v: string) => void;
+  onSaveRebuild: () => void;
+  onCancelRebuild: () => void;
 }
 
 function EventItem({
-  event,
+  item,
   editing,
   editText,
+  rebuilding,
+  rebuildDate,
+  rebuildTime,
   onEditTextChange,
   onStartEdit,
   onSaveEdit,
   onCancelEdit,
   onDelete,
-  isPast,
+  onCopy,
+  onStartRebuild,
+  onRebuildDateChange,
+  onRebuildTimeChange,
+  onSaveRebuild,
+  onCancelRebuild,
 }: EventItemProps) {
+  const urgency = getUrgency(item);
+  const isPast = urgency === "expired";
+
+  if (rebuilding) {
+    return (
+      <div className={`event-item rebuilding-mode urgency-${urgency}`}>
+        <div className="event-rebuild-row">
+          <input
+            type="date"
+            className="rebuild-date-input"
+            value={rebuildDate}
+            min={getToday()}
+            onChange={(e) => onRebuildDateChange(e.target.value)}
+          />
+          <input
+            type="time"
+            className="rebuild-time-input"
+            value={rebuildTime}
+            onChange={(e) => onRebuildTimeChange(e.target.value)}
+          />
+          <button className="event-btn save-btn" onClick={onSaveRebuild} title="保存">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 6L9 17l-5-5" />
+            </svg>
+          </button>
+          <button className="event-btn cancel-btn" onClick={onCancelRebuild} title="取消">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className={`event-item ${isPast ? "past" : ""}`}>
+    <div className={`event-item ${isPast ? "past" : ""} urgency-${urgency}`}>
       {editing ? (
         <div className="event-edit-row">
           <input
@@ -104,10 +203,29 @@ function EventItem({
         </div>
       ) : (
         <>
-          <span className="event-text" onClick={onStartEdit}>
-            {event.text}
-          </span>
+          <div className="event-content">
+            {item.type === "reminder" && item.time && (
+              <span className="event-time-badge">{item.time}</span>
+            )}
+            <span className="event-text" onClick={onStartEdit}>
+              {item.text}
+            </span>
+          </div>
           <div className="event-actions">
+            {!isPast && item.type === "reminder" && (
+              <button className="event-btn icon-btn rebuild-btn" onClick={onStartRebuild} title="重建">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="23 4 23 10 17 10" />
+                  <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10" />
+                </svg>
+              </button>
+            )}
+            <button className="event-btn icon-btn copy-btn" onClick={onCopy} title="复制">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+              </svg>
+            </button>
             <button className="event-btn icon-btn" onClick={onStartEdit} title="编辑">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
@@ -131,94 +249,150 @@ function EventItem({
 
 interface DayCardProps {
   date: string;
-  events: PlanEvent[];
-  editingEventId: string | null;
+  items: PlanItem[];
+  editingItemId: string | null;
   editText: string;
+  rebuildingId: string | null;
+  rebuildDate: string;
+  rebuildTime: string;
+  newItemDate: string | null;
+  newItemText: string;
+  newItemType: "event" | "reminder";
+  newItemTime: string;
   onEditTextChange: (v: string) => void;
   onStartEdit: (id: string) => void;
   onSaveEdit: () => void;
   onCancelEdit: () => void;
   onDelete: (id: string) => void;
-  newEventDate: string | null;
-  newEventText: string;
-  onNewEventDateChange: (date: string | null) => void;
-  onNewEventTextChange: (v: string) => void;
-  onAddEvent: (date: string) => void;
+  onCopy: (id: string) => void;
+  onStartRebuild: (id: string) => void;
+  onRebuildDateChange: (v: string) => void;
+  onRebuildTimeChange: (v: string) => void;
+  onSaveRebuild: () => void;
+  onCancelRebuild: () => void;
+  newItemDateChange: (date: string | null) => void;
+  newItemTextChange: (v: string) => void;
+  newItemTypeChange: (t: "event" | "reminder") => void;
+  newItemTimeChange: (v: string) => void;
+  onAddItem: (date: string) => void;
   isToday?: boolean;
 }
 
 function DayCard({
   date,
-  events,
-  editingEventId,
+  items,
+  editingItemId,
   editText,
+  rebuildingId,
+  rebuildDate,
+  rebuildTime,
+  newItemDate,
+  newItemText,
+  newItemType,
+  newItemTime,
   onEditTextChange,
   onStartEdit,
   onSaveEdit,
   onCancelEdit,
   onDelete,
-  newEventDate,
-  newEventText,
-  onNewEventDateChange,
-  onNewEventTextChange,
-  onAddEvent,
+  onCopy,
+  onStartRebuild,
+  onRebuildDateChange,
+  onRebuildTimeChange,
+  onSaveRebuild,
+  onCancelRebuild,
+  newItemDateChange,
+  newItemTextChange,
+  newItemTypeChange,
+  newItemTimeChange,
+  onAddItem,
   isToday,
 }: DayCardProps) {
   const isPast = isDateBeforeToday(date);
-  const dayName = getDayName(date);
-  const monthDay = getMonthDay(date);
-  const isAdding = newEventDate === date;
+  const isAdding = newItemDate === date;
 
   return (
     <div className={`day-card ${isPast ? "past" : ""} ${isToday ? "today" : ""}`}>
       <div className="day-card-header">
         <div className="day-card-title">
-          <span className="day-name">{dayName}</span>
-          <span className="day-date">{monthDay}</span>
+          <span className="day-name">{getDayName(date)}</span>
+          <span className="day-date">{getMonthDay(date)}</span>
           {isToday && <span className="today-tag">今天</span>}
         </div>
-        <span className="event-count">{events.length} 项</span>
+        <span className="event-count">{items.length} 项</span>
       </div>
 
       <div className="day-card-body">
-        {events.length === 0 && !isAdding && (
+        {items.length === 0 && !isAdding && (
           <div className="day-empty">暂无安排</div>
         )}
 
-        {events.map((ev) => (
+        {items.map((item) => (
           <EventItem
-            key={ev.id}
-            event={ev}
-            editing={editingEventId === ev.id}
+            key={item.id}
+            item={item}
+            editing={editingItemId === item.id}
             editText={editText}
+            rebuilding={rebuildingId === item.id}
+            rebuildDate={rebuildDate}
+            rebuildTime={rebuildTime}
             onEditTextChange={onEditTextChange}
-            onStartEdit={() => onStartEdit(ev.id)}
+            onStartEdit={() => onStartEdit(item.id)}
             onSaveEdit={onSaveEdit}
             onCancelEdit={onCancelEdit}
-            onDelete={() => onDelete(ev.id)}
-            isPast={isPast}
+            onDelete={() => onDelete(item.id)}
+            onCopy={() => onCopy(item.id)}
+            onStartRebuild={() => onStartRebuild(item.id)}
+            onRebuildDateChange={onRebuildDateChange}
+            onRebuildTimeChange={onRebuildTimeChange}
+            onSaveRebuild={onSaveRebuild}
+            onCancelRebuild={onCancelRebuild}
           />
         ))}
 
         {isAdding && (
-          <div className="add-event-row">
+          <div className="add-item-row">
             <input
-              className="add-event-input"
+              className="add-item-input"
               type="text"
-              placeholder="输入事件..."
-              value={newEventText}
-              onChange={(e) => onNewEventTextChange(e.target.value)}
+              placeholder={newItemType === "reminder" ? "输入提醒..." : "输入事件..."}
+              value={newItemText}
+              onChange={(e) => newItemTextChange(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") onAddEvent(date);
-                if (e.key === "Escape") onNewEventDateChange(null);
+                if (e.key === "Enter") onAddItem(date);
+                if (e.key === "Escape") newItemDateChange(null);
               }}
               autoFocus
               maxLength={200}
             />
+            <div className="add-item-extra">
+              <div className="add-type-toggle">
+                <button
+                  className={`type-btn ${newItemType === "event" ? "active" : ""}`}
+                  onClick={() => newItemTypeChange("event")}
+                >
+                  事件
+                </button>
+                <button
+                  className={`type-btn ${newItemType === "reminder" ? "active" : ""}`}
+                  onClick={() => newItemTypeChange("reminder")}
+                >
+                  提醒
+                </button>
+              </div>
+              {newItemType === "reminder" && (
+                <input
+                  type="time"
+                  className="add-time-input"
+                  value={newItemTime}
+                  onChange={(e) => newItemTimeChange(e.target.value)}
+                />
+              )}
+            </div>
             <button
               className="event-btn add-confirm-btn"
-              onClick={() => onAddEvent(date)}
-              disabled={!newEventText.trim()}
+              onClick={() => onAddItem(date)}
+              disabled={!newItemText.trim() || (newItemType === "reminder" && !newItemTime)}
               title="添加"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
@@ -232,105 +406,173 @@ function DayCard({
       <button
         className="add-event-btn"
         onClick={() => {
-          if (newEventDate === date) {
-            onNewEventDateChange(null);
+          if (newItemDate === date) {
+            newItemDateChange(null);
           } else {
-            onNewEventDateChange(date);
-            onNewEventTextChange("");
+            newItemDateChange(date);
+            newItemTextChange("");
           }
         }}
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
           <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
         </svg>
-        {isAdding ? "取消" : "添加事件"}
+        {isAdding ? "取消" : "添加"}
       </button>
     </div>
   );
 }
 
-/* ──────────── Grouped future / history events ──────────── */
+/* ──────────── Grouped items ──────────── */
 
-interface EventGroup {
+interface ItemGroup {
   date: string;
-  events: PlanEvent[];
+  items: PlanItem[];
 }
 
-function groupByDate(events: PlanEvent[]): EventGroup[] {
-  const map = new Map<string, PlanEvent[]>();
-  for (const ev of events) {
+function groupByDate(items: PlanItem[]): ItemGroup[] {
+  const map = new Map<string, PlanItem[]>();
+  for (const ev of items) {
     if (!map.has(ev.date)) map.set(ev.date, []);
     map.get(ev.date)!.push(ev);
   }
   return Array.from(map.entries())
     .sort(([a], [b]) => b.localeCompare(a))
-    .map(([date, evs]) => ({ date, events: evs }));
+    .map(([date, evs]) => ({ date, items: evs }));
 }
 
 /* ──────────── App ──────────── */
 
-function App() {
-  const [events, setEvents] = useState<PlanEvent[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem("tooplan-events") || "[]");
-    } catch {
-      return [];
+const STORAGE_KEY = "tooplan-items";
+
+function migrateOldData(): PlanItem[] {
+  try {
+    const old = JSON.parse(localStorage.getItem("tooplan-events") || "null");
+    if (Array.isArray(old)) {
+      const migrated: PlanItem[] = old.map((e: any) => ({
+        id: e.id || crypto.randomUUID(),
+        type: "event",
+        text: e.text || "",
+        date: e.date || getToday(),
+        createdAt: e.createdAt || Date.now(),
+      }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+      localStorage.removeItem("tooplan-events");
+      return migrated;
     }
+  } catch {}
+  return [];
+}
+
+function App() {
+  const [items, setItems] = useState<PlanItem[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+      if (Array.isArray(saved)) return saved;
+    } catch {}
+    return migrateOldData();
   });
 
   const [mainTab, setMainTab] = useState<MainTab>("schedule");
   const [scheduleTab, setScheduleTab] = useState<ScheduleTab>("today");
-  const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
-  const [newEventDate, setNewEventDate] = useState<string | null>(null);
-  const [newEventText, setNewEventText] = useState("");
+  const [newItemDate, setNewItemDate] = useState<string | null>(null);
+  const [newItemText, setNewItemText] = useState("");
+  const [newItemType, setNewItemType] = useState<"event" | "reminder">("event");
+  const [newItemTime, setNewItemTime] = useState(getNowTime());
+  const [rebuildingId, setRebuildingId] = useState<string | null>(null);
+  const [rebuildDate, setRebuildDate] = useState(getToday());
+  const [rebuildTime, setRebuildTime] = useState(getNowTime());
 
   useEffect(() => {
-    localStorage.setItem("tooplan-events", JSON.stringify(events));
-  }, [events]);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+  }, [items]);
 
-  /* ── event CRUD ── */
+  /* ── item CRUD ── */
 
-  const addEvent = (date: string) => {
-    const trimmed = newEventText.trim();
-    if (!trimmed || newEventDate !== date) return;
-    const ev: PlanEvent = {
+  const addItem = (date: string) => {
+    const trimmed = newItemText.trim();
+    if (!trimmed || newItemDate !== date) return;
+    if (newItemType === "reminder" && !newItemTime) return;
+    const item: PlanItem = {
       id: crypto.randomUUID(),
+      type: newItemType,
       text: trimmed,
       date,
+      time: newItemType === "reminder" ? newItemTime : undefined,
       createdAt: Date.now(),
     };
-    setEvents((prev) => [ev, ...prev]);
-    setNewEventText("");
-    setNewEventDate(null);
+    setItems((prev) => [item, ...prev]);
+    setNewItemText("");
+    setNewItemTime(getNowTime());
+    setNewItemType("event");
+    setNewItemDate(null);
   };
 
-  const deleteEvent = (id: string) => {
-    setEvents((prev) => prev.filter((e) => e.id !== id));
+  const deleteItem = (id: string) => {
+    setItems((prev) => prev.filter((e) => e.id !== id));
   };
 
   const startEdit = (id: string) => {
-    const ev = events.find((e) => e.id === id);
+    const ev = items.find((e) => e.id === id);
     if (!ev) return;
-    setEditingEventId(id);
+    setEditingItemId(id);
     setEditText(ev.text);
   };
 
   const saveEdit = () => {
-    if (!editingEventId) return;
+    if (!editingItemId) return;
     const trimmed = editText.trim();
     if (!trimmed) {
-      deleteEvent(editingEventId);
+      deleteItem(editingItemId);
       return;
     }
-    setEvents((prev) => prev.map((e) => (e.id === editingEventId ? { ...e, text: trimmed } : e)));
-    setEditingEventId(null);
+    setItems((prev) =>
+      prev.map((e) => (e.id === editingItemId ? { ...e, text: trimmed } : e)),
+    );
+    setEditingItemId(null);
     setEditText("");
   };
 
   const cancelEdit = () => {
-    setEditingEventId(null);
+    setEditingItemId(null);
     setEditText("");
+  };
+
+  const copyItem = (id: string) => {
+    const original = items.find((e) => e.id === id);
+    if (!original) return;
+    const copy: PlanItem = {
+      ...original,
+      id: crypto.randomUUID(),
+      createdAt: Date.now(),
+    };
+    setItems((prev) => [copy, ...prev]);
+  };
+
+  const startRebuild = (id: string) => {
+    const item = items.find((e) => e.id === id);
+    if (!item) return;
+    setRebuildingId(id);
+    setRebuildDate(item.date);
+    setRebuildTime(item.time || getNowTime());
+  };
+
+  const saveRebuild = () => {
+    if (!rebuildingId) return;
+    setItems((prev) =>
+      prev.map((e) =>
+        e.id === rebuildingId
+          ? { ...e, date: rebuildDate, time: rebuildTime, createdAt: Date.now() }
+          : e,
+      ),
+    );
+    setRebuildingId(null);
+  };
+
+  const cancelRebuild = () => {
+    setRebuildingId(null);
   };
 
   /* ── derived data ── */
@@ -338,27 +580,25 @@ function App() {
   const today = getToday();
   const weekDates = getWeekDates();
 
-  const getEventsForDay = (d: string) => events.filter((e) => e.date === d);
+  const getItemsForDay = (d: string) => items.filter((e) => e.date === d);
 
-  const todayEvents = getEventsForDay(today);
+  const todayItems = getItemsForDay(today);
 
-  // Events visible in "未来" tab = dates after this week
-  const futureEvents = events.filter((e) => e.date > weekDates[6]);
-  const futureGroups = groupByDate(futureEvents);
+  // Future: items after this week
+  const futureItems = items.filter((e) => e.date > weekDates[6]);
+  const futureGroups = groupByDate(futureItems);
 
-  // History: all events sorted newest-first, grouped by date
-  const historySorted = [...events].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
-  const historyGroups = groupByDate(historySorted);
+  // History: only expired items, sorted newest-first
+  const historyItems = items
+    .filter((e) => isItemExpired(e))
+    .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
+  const historyGroups = groupByDate(historyItems);
 
   /* ── future date picker ── */
   const [futurePickerDate, setFuturePickerDate] = useState(getNextWeekday());
   const [futurePickerText, setFuturePickerText] = useState("");
-
-  function getNextWeekday(): string {
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    return d.toISOString().split("T")[0];
-  }
+  const [futurePickerType, setFuturePickerType] = useState<"event" | "reminder">("event");
+  const [futurePickerTime, setFuturePickerTime] = useState(getNowTime());
 
   return (
     <div className="app">
@@ -390,14 +630,14 @@ function App() {
           onClick={() => setMainTab("schedule")}
         >
           安排
-          {todayEvents.length > 0 && <span className="main-badge">{todayEvents.length}</span>}
+          {todayItems.length > 0 && <span className="main-badge">{todayItems.length}</span>}
         </button>
         <button
           className={`main-tab ${mainTab === "history" ? "active" : ""}`}
           onClick={() => setMainTab("history")}
         >
           历史记录
-          <span className="main-badge muted">{events.length}</span>
+          <span className="main-badge muted">{historyItems.length}</span>
         </button>
       </nav>
 
@@ -424,19 +664,32 @@ function App() {
             <DayCard
               date={today}
               isToday
-              events={todayEvents}
-              editingEventId={editingEventId}
+              items={todayItems}
+              editingItemId={editingItemId}
               editText={editText}
+              rebuildingId={rebuildingId}
+              rebuildDate={rebuildDate}
+              rebuildTime={rebuildTime}
+              newItemDate={newItemDate}
+              newItemText={newItemText}
+              newItemType={newItemType}
+              newItemTime={newItemTime}
               onEditTextChange={setEditText}
               onStartEdit={startEdit}
               onSaveEdit={saveEdit}
               onCancelEdit={cancelEdit}
-              onDelete={deleteEvent}
-              newEventDate={newEventDate}
-              newEventText={newEventText}
-              onNewEventDateChange={setNewEventDate}
-              onNewEventTextChange={setNewEventText}
-              onAddEvent={addEvent}
+              onDelete={deleteItem}
+              onCopy={copyItem}
+              onStartRebuild={startRebuild}
+              onRebuildDateChange={setRebuildDate}
+              onRebuildTimeChange={setRebuildTime}
+              onSaveRebuild={saveRebuild}
+              onCancelRebuild={cancelRebuild}
+              newItemDateChange={setNewItemDate}
+              newItemTextChange={setNewItemText}
+              newItemTypeChange={setNewItemType}
+              newItemTimeChange={setNewItemTime}
+              onAddItem={addItem}
             />
           </div>
         )}
@@ -449,19 +702,32 @@ function App() {
                 key={date}
                 date={date}
                 isToday={date === today}
-                events={getEventsForDay(date)}
-                editingEventId={editingEventId}
+                items={getItemsForDay(date)}
+                editingItemId={editingItemId}
                 editText={editText}
+                rebuildingId={rebuildingId}
+                rebuildDate={rebuildDate}
+                rebuildTime={rebuildTime}
+                newItemDate={newItemDate}
+                newItemText={newItemText}
+                newItemType={newItemType}
+                newItemTime={newItemTime}
                 onEditTextChange={setEditText}
                 onStartEdit={startEdit}
                 onSaveEdit={saveEdit}
                 onCancelEdit={cancelEdit}
-                onDelete={deleteEvent}
-                newEventDate={newEventDate}
-                newEventText={newEventText}
-                onNewEventDateChange={setNewEventDate}
-                onNewEventTextChange={setNewEventText}
-                onAddEvent={addEvent}
+                onDelete={deleteItem}
+                onCopy={copyItem}
+                onStartRebuild={startRebuild}
+                onRebuildDateChange={setRebuildDate}
+                onRebuildTimeChange={setRebuildTime}
+                onSaveRebuild={saveRebuild}
+                onCancelRebuild={cancelRebuild}
+                newItemDateChange={setNewItemDate}
+                newItemTextChange={setNewItemText}
+                newItemTypeChange={setNewItemType}
+                newItemTimeChange={setNewItemTime}
+                onAddItem={addItem}
               />
             ))}
           </div>
@@ -480,20 +746,23 @@ function App() {
                   onChange={(e) => setFuturePickerDate(e.target.value)}
                 />
                 <input
-                  className="add-event-input"
+                  className="add-item-input"
                   type="text"
-                  placeholder="输入未来安排..."
+                  placeholder="输入内容..."
                   value={futurePickerText}
                   onChange={(e) => setFuturePickerText(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && futurePickerText.trim()) {
-                      const ev: PlanEvent = {
+                      const trimmed = futurePickerText.trim();
+                      const item: PlanItem = {
                         id: crypto.randomUUID(),
-                        text: futurePickerText.trim(),
+                        type: futurePickerType,
+                        text: trimmed,
                         date: futurePickerDate,
+                        time: futurePickerType === "reminder" ? futurePickerTime : undefined,
                         createdAt: Date.now(),
                       };
-                      setEvents((prev) => [ev, ...prev]);
+                      setItems((prev) => [item, ...prev]);
                       setFuturePickerText("");
                     }
                   }}
@@ -503,23 +772,50 @@ function App() {
                   className="event-btn add-confirm-btn"
                   onClick={() => {
                     if (futurePickerText.trim()) {
-                      const ev: PlanEvent = {
+                      const trimmed = futurePickerText.trim();
+                      const item: PlanItem = {
                         id: crypto.randomUUID(),
-                        text: futurePickerText.trim(),
+                        type: futurePickerType,
+                        text: trimmed,
                         date: futurePickerDate,
+                        time: futurePickerType === "reminder" ? futurePickerTime : undefined,
                         createdAt: Date.now(),
                       };
-                      setEvents((prev) => [ev, ...prev]);
+                      setItems((prev) => [item, ...prev]);
                       setFuturePickerText("");
                     }
                   }}
-                  disabled={!futurePickerText.trim()}
+                  disabled={!futurePickerText.trim() || (futurePickerType === "reminder" && !futurePickerTime)}
                   title="添加"
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                     <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
                   </svg>
                 </button>
+              </div>
+              <div className="future-add-meta">
+                <div className="add-type-toggle">
+                  <button
+                    className={`type-btn ${futurePickerType === "event" ? "active" : ""}`}
+                    onClick={() => setFuturePickerType("event")}
+                  >
+                    事件
+                  </button>
+                  <button
+                    className={`type-btn ${futurePickerType === "reminder" ? "active" : ""}`}
+                    onClick={() => setFuturePickerType("reminder")}
+                  >
+                    提醒
+                  </button>
+                </div>
+                {futurePickerType === "reminder" && (
+                  <input
+                    type="time"
+                    className="add-time-input"
+                    value={futurePickerTime}
+                    onChange={(e) => setFuturePickerTime(e.target.value)}
+                  />
+                )}
               </div>
             </div>
 
@@ -539,17 +835,26 @@ function App() {
                     <span className="date-value">{group.date}</span>
                   </div>
                   <div className="date-group-body">
-                    {group.events.map((ev) => (
+                    {group.items.map((item) => (
                       <EventItem
-                        key={ev.id}
-                        event={ev}
-                        editing={editingEventId === ev.id}
+                        key={item.id}
+                        item={item}
+                        editing={editingItemId === item.id}
                         editText={editText}
+                        rebuilding={rebuildingId === item.id}
+                        rebuildDate={rebuildDate}
+                        rebuildTime={rebuildTime}
                         onEditTextChange={setEditText}
-                        onStartEdit={() => startEdit(ev.id)}
+                        onStartEdit={() => startEdit(item.id)}
                         onSaveEdit={saveEdit}
                         onCancelEdit={cancelEdit}
-                        onDelete={() => deleteEvent(ev.id)}
+                        onDelete={() => deleteItem(item.id)}
+                        onCopy={() => copyItem(item.id)}
+                        onStartRebuild={() => startRebuild(item.id)}
+                        onRebuildDateChange={setRebuildDate}
+                        onRebuildTimeChange={setRebuildTime}
+                        onSaveRebuild={saveRebuild}
+                        onCancelRebuild={cancelRebuild}
                       />
                     ))}
                   </div>
@@ -568,7 +873,7 @@ function App() {
                   <circle cx="12" cy="12" r="10" />
                   <polyline points="12 6 12 12 16 14" />
                 </svg>
-                <p className="empty-text">暂无记录</p>
+                <p className="empty-text">暂无过期记录</p>
               </div>
             ) : (
               historyGroups.map((group) => {
@@ -580,18 +885,26 @@ function App() {
                       <span className="date-value">{group.date}</span>
                     </div>
                     <div className="date-group-body">
-                      {group.events.map((ev) => (
+                      {group.items.map((item) => (
                         <EventItem
-                          key={ev.id}
-                          event={ev}
-                          editing={editingEventId === ev.id}
+                          key={item.id}
+                          item={item}
+                          editing={editingItemId === item.id}
                           editText={editText}
+                          rebuilding={rebuildingId === item.id}
+                          rebuildDate={rebuildDate}
+                          rebuildTime={rebuildTime}
                           onEditTextChange={setEditText}
-                          onStartEdit={() => startEdit(ev.id)}
+                          onStartEdit={() => startEdit(item.id)}
                           onSaveEdit={saveEdit}
                           onCancelEdit={cancelEdit}
-                          onDelete={() => deleteEvent(ev.id)}
-                          isPast={isPastGroup}
+                          onDelete={() => deleteItem(item.id)}
+                          onCopy={() => copyItem(item.id)}
+                          onStartRebuild={() => startRebuild(item.id)}
+                          onRebuildDateChange={setRebuildDate}
+                          onRebuildTimeChange={setRebuildTime}
+                          onSaveRebuild={saveRebuild}
+                          onCancelRebuild={cancelRebuild}
                         />
                       ))}
                     </div>
