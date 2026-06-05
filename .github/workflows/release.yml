@@ -45,28 +45,31 @@ jobs:
       - name: Install Tauri CLI
         run: npm install -g @tauri-apps/cli
 
-      - name: Generate signing keystore
+      # Official Tauri v2 Android signing setup (https://v2.tauri.app/distribute/sign/android/)
+      - name: Setup Android signing
         run: |
-          KEYSTORE_DIR="src-tauri/gen/android/app"
-          KEYSTORE_FILE="$KEYSTORE_DIR/tooplan.keystore"
-          if [ ! -f "$KEYSTORE_FILE" ]; then
-            echo "Generating keystore at $KEYSTORE_FILE..."
-            keytool -genkey -v -keystore "$KEYSTORE_FILE" \
-              -alias tooplan \
+          cd src-tauri/gen/android
+          if [ -n "${{ secrets.ANDROID_KEY_BASE64 }}" ]; then
+            # Use keystore from GitHub secrets (official Tauri approach)
+            echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" > keystore.properties
+            echo "password=${{ secrets.ANDROID_KEY_PASSWORD }}" >> keystore.properties
+            base64 -d <<< "${{ secrets.ANDROID_KEY_BASE64 }}" > $RUNNER_TEMP/keystore.jks
+            echo "storeFile=$RUNNER_TEMP/keystore.jks" >> keystore.properties
+          else
+            # Generate a temporary keystore for CI builds
+            echo "No ANDROID_KEY_BASE64 secret found, generating temporary keystore..."
+            keytool -genkey -v -keystore "$RUNNER_TEMP/keystore.jks" \
+              -alias upload \
               -keyalg RSA -keysize 2048 -validity 10000 \
               -storepass tooplan123 \
               -keypass tooplan123 \
               -dname "CN=TooPlan, OU=Development, O=TooPlan, L=, S=, C="
-            echo "Keystore generated successfully"
-          else
-            echo "Keystore already exists"
+            echo "keyAlias=upload" > keystore.properties
+            echo "password=tooplan123" >> keystore.properties
+            echo "storeFile=$RUNNER_TEMP/keystore.jks" >> keystore.properties
           fi
 
       - name: Build Android APK
-        env:
-          # These match the fallback defaults in src-tauri/gen/android/app/build.gradle.kts
-          ANDROID_KEYSTORE_PASSWORD: tooplan123
-          ANDROID_KEY_PASSWORD: tooplan123
         run: npx tauri android build --target aarch64 --apk
 
       - name: Get version from tag

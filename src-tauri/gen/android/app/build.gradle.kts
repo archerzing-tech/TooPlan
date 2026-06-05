@@ -1,3 +1,4 @@
+import java.io.FileInputStream
 import java.util.Properties
 
 plugins {
@@ -32,12 +33,19 @@ android {
     }
     signingConfigs {
         create("release") {
-            val keystoreFile = file("tooplan.keystore")
-            if (keystoreFile.exists()) {
-                storeFile = keystoreFile
-                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD") ?: "tooplan123"
-                keyAlias = "tooplan"
-                keyPassword = System.getenv("ANDROID_KEY_PASSWORD") ?: "tooplan123"
+            val keystorePropertiesFile = rootProject.file("keystore.properties")
+            val keystoreProperties = Properties()
+            if (keystorePropertiesFile.exists()) {
+                keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+            }
+            val alias = keystoreProperties["keyAlias"] as? String
+            val pass = keystoreProperties["password"] as? String
+            val storePath = keystoreProperties["storeFile"] as? String
+            if (alias != null && pass != null && storePath != null) {
+                keyAlias = alias
+                keyPassword = pass
+                storeFile = file(storePath)
+                storePassword = pass
             }
         }
     }
@@ -55,7 +63,10 @@ android {
             }
         }
         getByName("release") {
-            signingConfig = signingConfigs.getByName("release")
+            val keystorePropertiesFile = rootProject.file("keystore.properties")
+            if (keystorePropertiesFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = true
             proguardFiles(
                 *fileTree(".") { include("**/*.pro") }
