@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { Calendar, Bell, ChevronDown } from "lucide-react";
 import "./App.css";
 
 interface PlanItem {
@@ -99,6 +100,86 @@ function getUrgency(item: PlanItem): Urgency {
   return "normal";
 }
 
+/* ──────────── TimePicker: hour + minute dropdowns ──────────── */
+
+const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
+const MINUTES = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, "0"));
+
+function getDefaultPreset(minutesFromNow: number): string {
+  const d = new Date(Date.now() + minutesFromNow * 60 * 1000);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function snapTo5(m: number): string {
+  return String(Math.round(m / 5) * 5).padStart(2, "0");
+}
+
+function TimePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [hStr, mStr] = value.split(":");
+  const h = HOURS.includes(hStr) ? hStr : "00";
+  const mNum = parseInt(mStr, 10);
+  const m = !isNaN(mNum) && MINUTES.includes(snapTo5(mNum)) ? snapTo5(mNum) : "00";
+
+  return (
+    <div className="time-picker">
+      <select
+        className="time-picker-select"
+        value={h}
+        onChange={(e) => onChange(`${e.target.value}:${m}`)}
+      >
+        {HOURS.map((hVal) => (
+          <option key={hVal} value={hVal}>{hVal}</option>
+        ))}
+      </select>
+      <span className="time-picker-sep">:</span>
+      <select
+        className="time-picker-select"
+        value={m}
+        onChange={(e) => onChange(`${h}:${e.target.value}`)}
+      >
+        {MINUTES.map((mVal) => (
+          <option key={mVal} value={mVal}>{mVal}</option>
+        ))}
+      </select>
+      {/* Quick presets */}
+      <div className="time-presets">
+        <button
+          type="button"
+          className={`time-preset-btn ${value === getDefaultPreset(30) ? "active" : ""}`}
+          onClick={() => onChange(getDefaultPreset(30))}
+          title="30分钟后"
+        >
+          +30
+        </button>
+        <button
+          type="button"
+          className={`time-preset-btn ${value === getDefaultPreset(60) ? "active" : ""}`}
+          onClick={() => onChange(getDefaultPreset(60))}
+          title="1小时后"
+        >
+          +1h
+        </button>
+        <button
+          type="button"
+          className={`time-preset-btn ${value === getDefaultPreset(120) ? "active" : ""}`}
+          onClick={() => onChange(getDefaultPreset(120))}
+          title="2小时后"
+        >
+          +2h
+        </button>
+        <button
+          type="button"
+          className={`time-preset-btn ${value === getDefaultPreset(1440) ? "active" : ""}`}
+          onClick={() => onChange(getDefaultPreset(1440))}
+          title="明天此时"
+        >
+          明天
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ──────────── Keyboard helper ──────────── */
 
 function scrollInputIntoView(e: React.FocusEvent<HTMLInputElement>) {
@@ -191,13 +272,7 @@ function EventItem({
             onChange={(e) => onRebuildDateChange(e.target.value)}
             onFocus={scrollInputIntoView}
           />
-          <input
-            type="time"
-            className="rebuild-time-input"
-            value={rebuildTime}
-            onChange={(e) => onRebuildTimeChange(e.target.value)}
-            onFocus={scrollInputIntoView}
-          />
+          <TimePicker value={rebuildTime} onChange={onRebuildTimeChange} />
           <button className="event-btn save-btn" onClick={onSaveRebuild} title="保存">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M20 6L9 17l-5-5" />
@@ -258,13 +333,7 @@ function EventItem({
               maxLength={200}
             />
             {editType === "reminder" && (
-              <input
-                type="time"
-                className="add-time-input"
-                value={editTime}
-                onChange={(e) => onEditTimeChange(e.target.value)}
-                onFocus={scrollInputIntoView}
-              />
+              <TimePicker value={editTime} onChange={onEditTimeChange} />
             )}
             <button className="event-btn save-btn" onClick={onSaveEdit} title="保存">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -299,6 +368,11 @@ function EventItem({
           <div className="event-content">
             {item.type === "reminder" && item.time && (
               <span className="event-time-badge">{item.time}</span>
+            )}
+            {item.type === "event" ? (
+              <Calendar size={14} className="event-type-icon event-type-icon-calendar" />
+            ) : (
+              <Bell size={14} className="event-type-icon event-type-icon-bell" />
             )}
             <span className="event-text" onClick={onStartEdit}>
               {item.text}
@@ -380,6 +454,8 @@ interface DayCardProps {
   onTouchDragStart: (id: string, e: React.TouchEvent) => void;
   onTouchDragMove: (e: React.TouchEvent) => void;
   onTouchDragEnd: (e: React.TouchEvent) => void;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
   isToday?: boolean;
 }
 
@@ -423,186 +499,208 @@ function DayCard({
   onTouchDragStart,
   onTouchDragMove,
   onTouchDragEnd,
+  collapsed,
+  onToggleCollapse,
   isToday,
 }: DayCardProps) {
   const isPast = isDateBeforeToday(date);
   const isAdding = newItemDate === date;
 
   return (
-    <div className={`day-card ${isPast ? "past" : ""} ${isToday ? "today" : ""}`}>
-      <div className="day-card-header">
-        <div className="day-card-title">
-          <span className="day-name">{getDayName(date)}</span>
-          <span className="day-date">{getMonthDay(date)}</span>
-          {isToday && <span className="today-tag">今天</span>}
-        </div>
-        <span className="event-count">{items.length} 项</span>
-      </div>
-
-      <div className="day-card-body">
-        {items.length === 0 && !isAdding && (
-          <div className="day-empty">暂无安排</div>
-        )}
-
-        {items.map((item) => (
-          <EventItem
-            key={item.id}
-            item={item}
-            editing={editingItemId === item.id}
-            editText={editText}
-            editTime={editTime}
-            editType={editType}
-            rebuilding={rebuildingId === item.id}
-            rebuildDate={rebuildDate}
-            rebuildTime={rebuildTime}
-            isDragging={dragId === item.id}
-            isDragOver={dragOverId === item.id}
-            onEditTextChange={onEditTextChange}
-            onEditTimeChange={onEditTimeChange}
-            onEditTypeChange={onEditTypeChange}
-            onStartEdit={() => onStartEdit(item.id)}
-            onSaveEdit={onSaveEdit}
-            onCancelEdit={onCancelEdit}
-            onDelete={() => onDelete(item.id)}
-            onCopy={() => onCopy(item.id)}
-            onStartRebuild={() => onStartRebuild(item.id)}
-            onRebuildDateChange={onRebuildDateChange}
-            onRebuildTimeChange={onRebuildTimeChange}
-            onSaveRebuild={onSaveRebuild}
-            onCancelRebuild={onCancelRebuild}
-            onDragStart={(e) => {
-              e.dataTransfer.setData("text/plain", item.id);
-              e.dataTransfer.effectAllowed = "move";
-              onSetDragId(item.id);
-            }}
-            onDragOver={(e) => {
-              e.preventDefault();
-              e.dataTransfer.dropEffect = "move";
-              if (dragId && dragId !== item.id) {
-                onSetDragOverId(item.id);
-              }
-            }}
-            onDragLeave={() => {
-              if (dragOverId === item.id) {
-                onSetDragOverId(null);
-              }
-            }}
-            onDrop={(e) => {
-              e.preventDefault();
-              const draggedId = e.dataTransfer.getData("text/plain");
-              if (draggedId && draggedId !== item.id) {
-                onMoveItem(draggedId, item.id, "before");
-              }
-              onSetDragId(null);
-              onSetDragOverId(null);
-            }}
-            onDragEnd={() => {
-              onSetDragId(null);
-              onSetDragOverId(null);
-            }}
-            onTouchDragStart={onTouchDragStart}
-            onTouchDragMove={onTouchDragMove}
-            onTouchDragEnd={onTouchDragEnd}
-          />
-        ))}
-
-        {/* Drop zone at the end of the list */}
-        {dragId && items.length > 0 && (
-          <div
-            className={`drop-zone-bottom ${dragOverId === "__bottom__" ? "drag-over" : ""}`}
-            onDragOver={(e) => {
-              e.preventDefault();
-              e.dataTransfer.dropEffect = "move";
-              onSetDragOverId("__bottom__");
-            }}
-            onDragLeave={() => {
-              if (dragOverId === "__bottom__") onSetDragOverId(null);
-            }}
-            onDrop={(e) => {
-              e.preventDefault();
-              const draggedId = e.dataTransfer.getData("text/plain");
-              if (draggedId) {
-                onMoveItem(draggedId, items[items.length - 1].id, "after");
-              }
-              onSetDragId(null);
-              onSetDragOverId(null);
-            }}
-          >
-            <span>拖放到此处</span>
+    <div className={`day-card ${isPast ? "past" : ""} ${isToday ? "today" : ""} ${collapsed ? "collapsed" : ""}`}>
+      {collapsed ? (
+        <>
+          <div className="day-card-header collapse-header" onClick={onToggleCollapse}>
+            <div className="day-card-title">
+              <ChevronDown size={14} className="collapse-chevron" />
+              <span className="day-name">{getDayName(date)}</span>
+              <span className="day-date">{getMonthDay(date)}</span>
+              {isToday && <span className="today-tag">今天</span>}
+            </div>
+            <span className="event-count">{items.length} 项</span>
           </div>
-        )}
+          {items.length > 0 && (
+            <div className="collapse-preview" onClick={onToggleCollapse}>
+              {items.slice(0, 2).map((item, idx) => (
+                <span key={idx} className="collapse-preview-text">
+                  {item.type === "event" ? "📅" : "🔔"} {item.text}
+                </span>
+              ))}
+              {items.length > 2 && <span className="collapse-preview-more">等 {items.length} 项</span>}
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          <div className="day-card-header">
+            <div className="day-card-title">
+              <span className="day-name">{getDayName(date)}</span>
+              <span className="day-date">{getMonthDay(date)}</span>
+              {isToday && <span className="today-tag">今天</span>}
+            </div>
+            <span className="event-count">{items.length} 项</span>
+          </div>
 
-        {isAdding && (
-          <div className="add-item-row">
-            <input
-              className="add-item-input"
-              type="text"
-              placeholder={newItemType === "reminder" ? "输入提醒..." : "输入事件..."}
-              value={newItemText}
-              onChange={(e) => newItemTextChange(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") onAddItem(date);
-                if (e.key === "Escape") newItemDateChange(null);
-              }}
-              onFocus={scrollInputIntoView}
-              autoFocus
-              maxLength={200}
-            />
-            <div className="add-item-extra">
-              <div className="add-type-toggle">
+          <div className="day-card-body">
+            {items.length === 0 && !isAdding && (
+              <div className="day-empty">暂无安排</div>
+            )}
+
+            {items.map((item) => (
+              <EventItem
+                key={item.id}
+                item={item}
+                editing={editingItemId === item.id}
+                editText={editText}
+                editTime={editTime}
+                editType={editType}
+                rebuilding={rebuildingId === item.id}
+                rebuildDate={rebuildDate}
+                rebuildTime={rebuildTime}
+                isDragging={dragId === item.id}
+                isDragOver={dragOverId === item.id}
+                onEditTextChange={onEditTextChange}
+                onEditTimeChange={onEditTimeChange}
+                onEditTypeChange={onEditTypeChange}
+                onStartEdit={() => onStartEdit(item.id)}
+                onSaveEdit={onSaveEdit}
+                onCancelEdit={onCancelEdit}
+                onDelete={() => onDelete(item.id)}
+                onCopy={() => onCopy(item.id)}
+                onStartRebuild={() => onStartRebuild(item.id)}
+                onRebuildDateChange={onRebuildDateChange}
+                onRebuildTimeChange={onRebuildTimeChange}
+                onSaveRebuild={onSaveRebuild}
+                onCancelRebuild={onCancelRebuild}
+                onDragStart={(e) => {
+                  e.dataTransfer.setData("text/plain", item.id);
+                  e.dataTransfer.effectAllowed = "move";
+                  onSetDragId(item.id);
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  if (dragId && dragId !== item.id) {
+                    onSetDragOverId(item.id);
+                  }
+                }}
+                onDragLeave={() => {
+                  if (dragOverId === item.id) {
+                    onSetDragOverId(null);
+                  }
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const draggedId = e.dataTransfer.getData("text/plain");
+                  if (draggedId && draggedId !== item.id) {
+                    onMoveItem(draggedId, item.id, "before");
+                  }
+                  onSetDragId(null);
+                  onSetDragOverId(null);
+                }}
+                onDragEnd={() => {
+                  onSetDragId(null);
+                  onSetDragOverId(null);
+                }}
+                onTouchDragStart={onTouchDragStart}
+                onTouchDragMove={onTouchDragMove}
+                onTouchDragEnd={onTouchDragEnd}
+              />
+            ))}
+
+            {/* Drop zone at the end of the list */}
+            {dragId && items.length > 0 && (
+              <div
+                className={`drop-zone-bottom ${dragOverId === "__bottom__" ? "drag-over" : ""}`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  onSetDragOverId("__bottom__");
+                }}
+                onDragLeave={() => {
+                  if (dragOverId === "__bottom__") onSetDragOverId(null);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const draggedId = e.dataTransfer.getData("text/plain");
+                  if (draggedId) {
+                    onMoveItem(draggedId, items[items.length - 1].id, "after");
+                  }
+                  onSetDragId(null);
+                  onSetDragOverId(null);
+                }}
+              >
+                <span>拖放到此处</span>
+              </div>
+            )}
+
+            {isAdding && (
+              <div className="add-item-row">
+                <input
+                  className="add-item-input"
+                  type="text"
+                  placeholder={newItemType === "reminder" ? "输入提醒..." : "输入事件..."}
+                  value={newItemText}
+                  onChange={(e) => newItemTextChange(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") onAddItem(date);
+                    if (e.key === "Escape") newItemDateChange(null);
+                  }}
+                  onFocus={scrollInputIntoView}
+                  autoFocus
+                  maxLength={200}
+                />
+                <div className="add-item-extra">
+                  <div className="add-type-toggle">
+                    <button
+                      className={`type-btn ${newItemType === "event" ? "active" : ""}`}
+                      onClick={() => newItemTypeChange("event")}
+                    >
+                      事件
+                    </button>
+                    <button
+                      className={`type-btn ${newItemType === "reminder" ? "active" : ""}`}
+                      onClick={() => newItemTypeChange("reminder")}
+                    >
+                      提醒
+                    </button>
+                  </div>
+                  {newItemType === "reminder" && (
+                    <TimePicker value={newItemTime} onChange={newItemTimeChange} />
+                  )}
+                </div>
                 <button
-                  className={`type-btn ${newItemType === "event" ? "active" : ""}`}
-                  onClick={() => newItemTypeChange("event")}
+                  className="event-btn add-confirm-btn"
+                  onClick={() => onAddItem(date)}
+                  disabled={!newItemText.trim() || (newItemType === "reminder" && !newItemTime)}
+                  title="添加"
                 >
-                  事件
-                </button>
-                <button
-                  className={`type-btn ${newItemType === "reminder" ? "active" : ""}`}
-                  onClick={() => newItemTypeChange("reminder")}
-                >
-                  提醒
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
                 </button>
               </div>
-              {newItemType === "reminder" && (
-                <input
-                  type="time"
-                  className="add-time-input"
-                  value={newItemTime}
-                  onChange={(e) => newItemTimeChange(e.target.value)}
-                  onFocus={scrollInputIntoView}
-                />
-              )}
-            </div>
-            <button
-              className="event-btn add-confirm-btn"
-              onClick={() => onAddItem(date)}
-              disabled={!newItemText.trim() || (newItemType === "reminder" && !newItemTime)}
-              title="添加"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-            </button>
+            )}
           </div>
-        )}
-      </div>
 
-      <button
-        className="add-event-btn"
-        onClick={() => {
-          if (newItemDate === date) {
-            newItemDateChange(null);
-          } else {
-            newItemDateChange(date);
-            newItemTextChange("");
-          }
-        }}
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-          <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-        </svg>
-        {isAdding ? "取消" : "添加"}
-      </button>
+          <button
+            className="add-event-btn"
+            onClick={() => {
+              if (newItemDate === date) {
+                newItemDateChange(null);
+              } else {
+                newItemDateChange(date);
+                newItemTextChange("");
+              }
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            {isAdding ? "取消" : "添加"}
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -822,6 +920,33 @@ function App() {
     return migrateOldData();
   });
 
+  // Default sample data for first launch
+  const hasSeenSampleRef = useRef(false);
+  useEffect(() => {
+    if (items.length === 0 && !hasSeenSampleRef.current) {
+      hasSeenSampleRef.current = true;
+      setItems([
+        {
+          id: crypto.randomUUID(),
+          type: "event",
+          text: "欢迎使用 TooPlan! 这是一个示例事件，点击可编辑",
+          date: getToday(),
+          createdAt: Date.now(),
+          sortOrder: 0,
+        },
+        {
+          id: crypto.randomUUID(),
+          type: "reminder",
+          text: "这是一个提醒示例，可设置具体时间",
+          date: getToday(),
+          time: getNowTime(),
+          createdAt: Date.now(),
+          sortOrder: 1000,
+        },
+      ]);
+    }
+  }, [items.length]);
+
   const [mainTab, setMainTab] = useState<MainTab>("schedule");
   const [scheduleTab, setScheduleTab] = useState<ScheduleTab>("today");
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
@@ -837,8 +962,21 @@ function App() {
   const [rebuildTime, setRebuildTime] = useState(getNowTime());
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
 
-  /* ── Touch drag state (refs to avoid re-renders on touch move) ── */
+  const toggleExpandDay = (date: string) => {
+    setExpandedDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(date)) {
+        next.delete(date);
+      } else {
+        next.add(date);
+      }
+      return next;
+    });
+  };
+
+  /* ── Toggle expand for a day in week view ── */
 
   const touchState = useRef({
     active: false,
@@ -1166,8 +1304,8 @@ function App() {
               </linearGradient>
             </defs>
             <rect x="42" y="42" width="428" height="428" rx="96" ry="96" fill="url(#iconGrad)" />
-            <path d="M 130 140 h 90 v 20 h -35 v 200 h -20 v -200 h -35 z" fill="white" />
-            <path d="M 260 140 h 80 a 55 55 0 1 1 0 100 h -60 v 120 h -20 z" fill="white" />
+            <polyline points="180,280 250,350 360,210" fill="none" stroke="white" strokeWidth="36" strokeLinecap="round" strokeLinejoin="round" />
+            <circle cx="380" cy="190" r="14" fill="white" />
           </svg>
           <h1>TooPlan</h1>
         </div>
@@ -1254,51 +1392,57 @@ function App() {
 
         {mainTab === "schedule" && scheduleTab === "week" && (
           <div className="week-grid">
-            {weekDates.map((date) => (
-              <DayCard
-                key={date}
-                date={date}
-                isToday={date === today}
-                items={getItemsForDay(date)}
-                editingItemId={editingItemId}
-                editText={editText}
-                editTime={editTime}
-                editType={editType}
-                rebuildingId={rebuildingId}
-                rebuildDate={rebuildDate}
-                rebuildTime={rebuildTime}
-                newItemDate={newItemDate}
-                newItemText={newItemText}
-                newItemType={newItemType}
-                newItemTime={newItemTime}
-                dragId={dragId}
-                dragOverId={dragOverId}
-                onEditTextChange={setEditText}
-                onEditTimeChange={setEditTime}
-                onEditTypeChange={setEditType}
-                onStartEdit={startEdit}
-                onSaveEdit={doSaveEdit}
-                onCancelEdit={doCancelEdit}
-                onDelete={deleteItem}
-                onCopy={copyItem}
-                onStartRebuild={startRebuild}
-                onRebuildDateChange={setRebuildDate}
-                onRebuildTimeChange={setRebuildTime}
-                onSaveRebuild={saveRebuild}
-                onCancelRebuild={cancelRebuild}
-                newItemDateChange={setNewItemDate}
-                newItemTextChange={setNewItemText}
-                newItemTypeChange={setNewItemType}
-                newItemTimeChange={setNewItemTime}
-                onAddItem={addItem}
-                onMoveItem={moveItem}
-                onSetDragId={setDragId}
-                onSetDragOverId={setDragOverId}
-                onTouchDragStart={handleTouchDragStart}
-                onTouchDragMove={handleTouchDragMove}
-                onTouchDragEnd={handleTouchDragEnd}
-              />
-            ))}
+            {weekDates.map((date) => {
+              const isPastDate = isDateBeforeToday(date);
+              const isCollapsed = isPastDate && !expandedDays.has(date);
+              return (
+                <DayCard
+                  key={date}
+                  date={date}
+                  isToday={date === today}
+                  items={getItemsForDay(date)}
+                  collapsed={isCollapsed}
+                  onToggleCollapse={() => toggleExpandDay(date)}
+                  editingItemId={editingItemId}
+                  editText={editText}
+                  editTime={editTime}
+                  editType={editType}
+                  rebuildingId={rebuildingId}
+                  rebuildDate={rebuildDate}
+                  rebuildTime={rebuildTime}
+                  newItemDate={newItemDate}
+                  newItemText={newItemText}
+                  newItemType={newItemType}
+                  newItemTime={newItemTime}
+                  dragId={dragId}
+                  dragOverId={dragOverId}
+                  onEditTextChange={setEditText}
+                  onEditTimeChange={setEditTime}
+                  onEditTypeChange={setEditType}
+                  onStartEdit={startEdit}
+                  onSaveEdit={doSaveEdit}
+                  onCancelEdit={doCancelEdit}
+                  onDelete={deleteItem}
+                  onCopy={copyItem}
+                  onStartRebuild={startRebuild}
+                  onRebuildDateChange={setRebuildDate}
+                  onRebuildTimeChange={setRebuildTime}
+                  onSaveRebuild={saveRebuild}
+                  onCancelRebuild={cancelRebuild}
+                  newItemDateChange={setNewItemDate}
+                  newItemTextChange={setNewItemText}
+                  newItemTypeChange={setNewItemType}
+                  newItemTimeChange={setNewItemTime}
+                  onAddItem={addItem}
+                  onMoveItem={moveItem}
+                  onSetDragId={setDragId}
+                  onSetDragOverId={setDragOverId}
+                  onTouchDragStart={handleTouchDragStart}
+                  onTouchDragMove={handleTouchDragMove}
+                  onTouchDragEnd={handleTouchDragEnd}
+                />
+              );
+            })}
           </div>
         )}
 
@@ -1381,13 +1525,7 @@ function App() {
                   </button>
                 </div>
                 {futurePickerType === "reminder" && (
-                  <input
-                    type="time"
-                    className="add-time-input"
-                    value={futurePickerTime}
-                    onChange={(e) => setFuturePickerTime(e.target.value)}
-                    onFocus={scrollInputIntoView}
-                  />
+                  <TimePicker value={futurePickerTime} onChange={setFuturePickerTime} />
                 )}
               </div>
             </div>
