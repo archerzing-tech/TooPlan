@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Calendar, Bell, ChevronDown } from "lucide-react";
+import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import "./App.css";
 
 interface PlanItem {
@@ -180,40 +181,51 @@ function TimePicker({ value, onChange }: { value: string; onChange: (v: string) 
   );
 }
 
-/* ──────────── Keyboard helper ──────────── */
+/* ──────────── Modal ──────────── */
 
-function scrollInputIntoView(e: React.FocusEvent<HTMLInputElement>) {
-  setTimeout(() => {
-    e.target.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, 350);
+function Modal({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-card" ref={dialogRef} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <span className="modal-title">{title}</span>
+          <button className="modal-close-btn" onClick={onClose}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <div className="modal-body">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /* ──────────── Event item ──────────── */
 
 interface EventItemProps {
   item: PlanItem;
-  editing: boolean;
-  editText: string;
-  editTime: string;
-  editType: "event" | "reminder";
-  rebuilding: boolean;
-  rebuildDate: string;
-  rebuildTime: string;
   isDragging: boolean;
   isDragOver: boolean;
-  onEditTextChange: (v: string) => void;
-  onEditTimeChange: (v: string) => void;
-  onEditTypeChange: (t: "event" | "reminder") => void;
-  onStartEdit: () => void;
-  onSaveEdit: () => void;
-  onCancelEdit: () => void;
+  onEdit: () => void;
   onDelete: () => void;
   onCopy: () => void;
-  onStartRebuild: () => void;
-  onRebuildDateChange: (v: string) => void;
-  onRebuildTimeChange: (v: string) => void;
-  onSaveRebuild: () => void;
-  onCancelRebuild: () => void;
+  onRebuild: () => void;
   onDragStart: (e: React.DragEvent) => void;
   onDragOver: (e: React.DragEvent) => void;
   onDragLeave: () => void;
@@ -226,28 +238,12 @@ interface EventItemProps {
 
 function EventItem({
   item,
-  editing,
-  editText,
-  editTime,
-  editType,
-  rebuilding,
-  rebuildDate,
-  rebuildTime,
   isDragging,
   isDragOver,
-  onEditTextChange,
-  onEditTimeChange,
-  onEditTypeChange,
-  onStartEdit,
-  onSaveEdit,
-  onCancelEdit,
+  onEdit,
   onDelete,
   onCopy,
-  onStartRebuild,
-  onRebuildDateChange,
-  onRebuildTimeChange,
-  onSaveRebuild,
-  onCancelRebuild,
+  onRebuild,
   onDragStart,
   onDragOver,
   onDragLeave,
@@ -260,154 +256,71 @@ function EventItem({
   const urgency = getUrgency(item);
   const isPast = urgency === "expired";
 
-  if (rebuilding) {
-    return (
-      <div className={`event-item rebuilding-mode urgency-${urgency}`}>
-        <div className="event-rebuild-row">
-          <input
-            type="date"
-            className="rebuild-date-input"
-            value={rebuildDate}
-            min={getToday()}
-            onChange={(e) => onRebuildDateChange(e.target.value)}
-            onFocus={scrollInputIntoView}
-          />
-          <TimePicker value={rebuildTime} onChange={onRebuildTimeChange} />
-          <button className="event-btn save-btn" onClick={onSaveRebuild} title="保存">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M20 6L9 17l-5-5" />
-            </svg>
-          </button>
-          <button className="event-btn cancel-btn" onClick={onCancelRebuild} title="取消">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  const canDrag = !editing;
-
   return (
     <div
       className={`event-item ${isPast ? "past" : ""} urgency-${urgency} ${isDragging ? "dragging" : ""} ${isDragOver ? "drag-over" : ""}`}
       data-item-id={item.id}
-      draggable={canDrag}
-      onDragStart={canDrag ? onDragStart : undefined}
+      draggable
+      onDragStart={onDragStart}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
       onDragEnd={onDragEnd}
-      onTouchStart={canDrag ? (e) => onTouchDragStart(item.id, e) : undefined}
-      onTouchMove={canDrag ? onTouchDragMove : undefined}
-      onTouchEnd={canDrag ? onTouchDragEnd : undefined}
+      onTouchStart={(e) => onTouchDragStart(item.id, e)}
+      onTouchMove={onTouchDragMove}
+      onTouchEnd={onTouchDragEnd}
     >
-      {canDrag && (
-        <span className="drag-handle" title="拖拽排序">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-            <circle cx="8" cy="6" r="1.5" />
-            <circle cx="16" cy="6" r="1.5" />
-            <circle cx="8" cy="12" r="1.5" />
-            <circle cx="16" cy="12" r="1.5" />
-            <circle cx="8" cy="18" r="1.5" />
-            <circle cx="16" cy="18" r="1.5" />
-          </svg>
+      <span className="drag-handle" title="拖拽排序">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+          <circle cx="8" cy="6" r="1.5" />
+          <circle cx="16" cy="6" r="1.5" />
+          <circle cx="8" cy="12" r="1.5" />
+          <circle cx="16" cy="12" r="1.5" />
+          <circle cx="8" cy="18" r="1.5" />
+          <circle cx="16" cy="18" r="1.5" />
+        </svg>
+      </span>
+      <div className="event-content">
+        {item.type === "reminder" && item.time && (
+          <span className="event-time-badge">{item.time}</span>
+        )}
+        {item.type === "event" ? (
+          <Calendar size={14} className="event-type-icon event-type-icon-calendar" />
+        ) : (
+          <Bell size={14} className="event-type-icon event-type-icon-bell" />
+        )}
+        <span className="event-text" onClick={onEdit}>
+          {item.text}
         </span>
-      )}
-      {editing ? (
-        <div className="event-edit-wrapper">
-          <div className="event-edit-row">
-            <input
-              className="event-edit-input"
-              type="text"
-              value={editText}
-              onChange={(e) => onEditTextChange(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") onSaveEdit();
-                if (e.key === "Escape") onCancelEdit();
-              }}
-              onFocus={scrollInputIntoView}
-              autoFocus
-              maxLength={200}
-            />
-            {editType === "reminder" && (
-              <TimePicker value={editTime} onChange={onEditTimeChange} />
-            )}
-            <button className="event-btn save-btn" onClick={onSaveEdit} title="保存">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M20 6L9 17l-5-5" />
-              </svg>
-            </button>
-            <button className="event-btn cancel-btn" onClick={onCancelEdit} title="取消">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          </div>
-          <div className="edit-meta-row">
-            <div className="add-type-toggle">
-              <button
-                className={`type-btn ${editType === "event" ? "active" : ""}`}
-                onClick={() => onEditTypeChange("event")}
-              >
-                事件
-              </button>
-              <button
-                className={`type-btn ${editType === "reminder" ? "active" : ""}`}
-                onClick={() => onEditTypeChange("reminder")}
-              >
-                提醒
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <>
-          <div className="event-content">
-            {item.type === "reminder" && item.time && (
-              <span className="event-time-badge">{item.time}</span>
-            )}
-            {item.type === "event" ? (
-              <Calendar size={14} className="event-type-icon event-type-icon-calendar" />
-            ) : (
-              <Bell size={14} className="event-type-icon event-type-icon-bell" />
-            )}
-            <span className="event-text" onClick={onStartEdit}>
-              {item.text}
-            </span>
-          </div>
-          <div className="event-actions">
-            {!isPast && item.type === "reminder" && (
-              <button className="event-btn icon-btn rebuild-btn" onClick={onStartRebuild} title="重建">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="23 4 23 10 17 10" />
-                  <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10" />
-                </svg>
-              </button>
-            )}
-            <button className="event-btn icon-btn copy-btn" onClick={onCopy} title="复制">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-              </svg>
-            </button>
-            <button className="event-btn icon-btn" onClick={onStartEdit} title="编辑">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
-                <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
-              </svg>
-            </button>
-            <button className="event-btn icon-btn delete-btn" onClick={onDelete} title="删除">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="3 6 5 6 21 6" />
-                <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
-              </svg>
-            </button>
-          </div>
-        </>
-      )}
+      </div>
+      <div className="event-actions">
+        {!isPast && item.type === "reminder" && (
+          <button className="event-btn icon-btn rebuild-btn" onClick={onRebuild} title="重建">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="23 4 23 10 17 10" />
+              <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10" />
+            </svg>
+          </button>
+        )}
+        <button className="event-btn icon-btn copy-btn" onClick={onCopy} title="复制">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+            <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+          </svg>
+        </button>
+        <button className="event-btn icon-btn" onClick={onEdit} title="编辑">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+            <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+          </svg>
+        </button>
+        <button className="event-btn icon-btn delete-btn" onClick={onDelete} title="删除">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+          </svg>
+        </button>
+      </div>
     </div>
   );
 }
@@ -417,37 +330,13 @@ function EventItem({
 interface DayCardProps {
   date: string;
   items: PlanItem[];
-  editingItemId: string | null;
-  editText: string;
-  editTime: string;
-  editType: "event" | "reminder";
-  rebuildingId: string | null;
-  rebuildDate: string;
-  rebuildTime: string;
-  newItemDate: string | null;
-  newItemText: string;
-  newItemType: "event" | "reminder";
-  newItemTime: string;
   dragId: string | null;
   dragOverId: string | null;
-  onEditTextChange: (v: string) => void;
-  onEditTimeChange: (v: string) => void;
-  onEditTypeChange: (t: "event" | "reminder") => void;
-  onStartEdit: (id: string) => void;
-  onSaveEdit: () => void;
-  onCancelEdit: () => void;
+  onEdit: (id: string) => void;
   onDelete: (id: string) => void;
   onCopy: (id: string) => void;
-  onStartRebuild: (id: string) => void;
-  onRebuildDateChange: (v: string) => void;
-  onRebuildTimeChange: (v: string) => void;
-  onSaveRebuild: () => void;
-  onCancelRebuild: () => void;
-  newItemDateChange: (date: string | null) => void;
-  newItemTextChange: (v: string) => void;
-  newItemTypeChange: (t: "event" | "reminder") => void;
-  newItemTimeChange: (v: string) => void;
-  onAddItem: (date: string) => void;
+  onRebuild: (id: string) => void;
+  onAdd: (date: string) => void;
   onMoveItem: (dragId: string, targetId: string, position: "before" | "after") => void;
   onSetDragId: (id: string | null) => void;
   onSetDragOverId: (id: string | null) => void;
@@ -462,37 +351,13 @@ interface DayCardProps {
 function DayCard({
   date,
   items,
-  editingItemId,
-  editText,
-  editTime,
-  editType,
-  rebuildingId,
-  rebuildDate,
-  rebuildTime,
-  newItemDate,
-  newItemText,
-  newItemType,
-  newItemTime,
   dragId,
   dragOverId,
-  onEditTextChange,
-  onEditTimeChange,
-  onEditTypeChange,
-  onStartEdit,
-  onSaveEdit,
-  onCancelEdit,
+  onEdit,
   onDelete,
   onCopy,
-  onStartRebuild,
-  onRebuildDateChange,
-  onRebuildTimeChange,
-  onSaveRebuild,
-  onCancelRebuild,
-  newItemDateChange,
-  newItemTextChange,
-  newItemTypeChange,
-  newItemTimeChange,
-  onAddItem,
+  onRebuild,
+  onAdd,
   onMoveItem,
   onSetDragId,
   onSetDragOverId,
@@ -504,7 +369,6 @@ function DayCard({
   isToday,
 }: DayCardProps) {
   const isPast = isDateBeforeToday(date);
-  const isAdding = newItemDate === date;
 
   return (
     <div className={`day-card ${isPast ? "past" : ""} ${isToday ? "today" : ""} ${collapsed ? "collapsed" : ""}`}>
@@ -542,7 +406,7 @@ function DayCard({
           </div>
 
           <div className="day-card-body">
-            {items.length === 0 && !isAdding && (
+            {items.length === 0 && (
               <div className="day-empty">暂无安排</div>
             )}
 
@@ -550,28 +414,12 @@ function DayCard({
               <EventItem
                 key={item.id}
                 item={item}
-                editing={editingItemId === item.id}
-                editText={editText}
-                editTime={editTime}
-                editType={editType}
-                rebuilding={rebuildingId === item.id}
-                rebuildDate={rebuildDate}
-                rebuildTime={rebuildTime}
                 isDragging={dragId === item.id}
                 isDragOver={dragOverId === item.id}
-                onEditTextChange={onEditTextChange}
-                onEditTimeChange={onEditTimeChange}
-                onEditTypeChange={onEditTypeChange}
-                onStartEdit={() => onStartEdit(item.id)}
-                onSaveEdit={onSaveEdit}
-                onCancelEdit={onCancelEdit}
+                onEdit={() => onEdit(item.id)}
                 onDelete={() => onDelete(item.id)}
                 onCopy={() => onCopy(item.id)}
-                onStartRebuild={() => onStartRebuild(item.id)}
-                onRebuildDateChange={onRebuildDateChange}
-                onRebuildTimeChange={onRebuildTimeChange}
-                onSaveRebuild={onSaveRebuild}
-                onCancelRebuild={onCancelRebuild}
+                onRebuild={() => onRebuild(item.id)}
                 onDragStart={(e) => {
                   e.dataTransfer.setData("text/plain", item.id);
                   e.dataTransfer.effectAllowed = "move";
@@ -633,71 +481,16 @@ function DayCard({
                 <span>拖放到此处</span>
               </div>
             )}
-
-            {isAdding && (
-              <div className="add-item-row">
-                <input
-                  className="add-item-input"
-                  type="text"
-                  placeholder={newItemType === "reminder" ? "输入提醒..." : "输入事件..."}
-                  value={newItemText}
-                  onChange={(e) => newItemTextChange(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") onAddItem(date);
-                    if (e.key === "Escape") newItemDateChange(null);
-                  }}
-                  onFocus={scrollInputIntoView}
-                  autoFocus
-                  maxLength={200}
-                />
-                <div className="add-item-extra">
-                  <div className="add-type-toggle">
-                    <button
-                      className={`type-btn ${newItemType === "event" ? "active" : ""}`}
-                      onClick={() => newItemTypeChange("event")}
-                    >
-                      事件
-                    </button>
-                    <button
-                      className={`type-btn ${newItemType === "reminder" ? "active" : ""}`}
-                      onClick={() => newItemTypeChange("reminder")}
-                    >
-                      提醒
-                    </button>
-                  </div>
-                  {newItemType === "reminder" && (
-                    <TimePicker value={newItemTime} onChange={newItemTimeChange} />
-                  )}
-                </div>
-                <button
-                  className="event-btn add-confirm-btn"
-                  onClick={() => onAddItem(date)}
-                  disabled={!newItemText.trim() || (newItemType === "reminder" && !newItemTime)}
-                  title="添加"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                  </svg>
-                </button>
-              </div>
-            )}
           </div>
 
           <button
             className="add-event-btn"
-            onClick={() => {
-              if (newItemDate === date) {
-                newItemDateChange(null);
-              } else {
-                newItemDateChange(date);
-                newItemTextChange("");
-              }
-            }}
+            onClick={() => onAdd(date)}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
             </svg>
-            {isAdding ? "取消" : "添加"}
+            添加
           </button>
         </>
       )}
@@ -709,28 +502,12 @@ function DayCard({
 
 interface DraggableEventListProps {
   items: PlanItem[];
-  editingItemId: string | null;
-  editText: string;
-  editTime: string;
-  editType: "event" | "reminder";
-  rebuildingId: string | null;
-  rebuildDate: string;
-  rebuildTime: string;
   dragId: string | null;
   dragOverId: string | null;
-  onEditTextChange: (v: string) => void;
-  onEditTimeChange: (v: string) => void;
-  onEditTypeChange: (t: "event" | "reminder") => void;
-  onStartEdit: (id: string) => void;
-  onSaveEdit: () => void;
-  onCancelEdit: () => void;
+  onEdit: (id: string) => void;
   onDelete: (id: string) => void;
   onCopy: (id: string) => void;
-  onStartRebuild: (id: string) => void;
-  onRebuildDateChange: (v: string) => void;
-  onRebuildTimeChange: (v: string) => void;
-  onSaveRebuild: () => void;
-  onCancelRebuild: () => void;
+  onRebuild: (id: string) => void;
   onMoveItem: (dragId: string, targetId: string, position: "before" | "after") => void;
   onSetDragId: (id: string | null) => void;
   onSetDragOverId: (id: string | null) => void;
@@ -741,28 +518,12 @@ interface DraggableEventListProps {
 
 function DraggableEventList({
   items,
-  editingItemId,
-  editText,
-  editTime,
-  editType,
-  rebuildingId,
-  rebuildDate,
-  rebuildTime,
   dragId,
   dragOverId,
-  onEditTextChange,
-  onEditTimeChange,
-  onEditTypeChange,
-  onStartEdit,
-  onSaveEdit,
-  onCancelEdit,
+  onEdit,
   onDelete,
   onCopy,
-  onStartRebuild,
-  onRebuildDateChange,
-  onRebuildTimeChange,
-  onSaveRebuild,
-  onCancelRebuild,
+  onRebuild,
   onMoveItem,
   onSetDragId,
   onSetDragOverId,
@@ -776,28 +537,12 @@ function DraggableEventList({
         <EventItem
           key={item.id}
           item={item}
-          editing={editingItemId === item.id}
-          editText={editText}
-          editTime={editTime}
-          editType={editType}
-          rebuilding={rebuildingId === item.id}
-          rebuildDate={rebuildDate}
-          rebuildTime={rebuildTime}
           isDragging={dragId === item.id}
           isDragOver={dragOverId === item.id}
-          onEditTextChange={onEditTextChange}
-          onEditTimeChange={onEditTimeChange}
-          onEditTypeChange={onEditTypeChange}
-          onStartEdit={() => onStartEdit(item.id)}
-          onSaveEdit={onSaveEdit}
-          onCancelEdit={onCancelEdit}
+          onEdit={() => onEdit(item.id)}
           onDelete={() => onDelete(item.id)}
           onCopy={() => onCopy(item.id)}
-          onStartRebuild={() => onStartRebuild(item.id)}
-          onRebuildDateChange={onRebuildDateChange}
-          onRebuildTimeChange={onRebuildTimeChange}
-          onSaveRebuild={onSaveRebuild}
-          onCancelRebuild={onCancelRebuild}
+          onRebuild={() => onRebuild(item.id)}
           onDragStart={(e) => {
             e.dataTransfer.setData("text/plain", item.id);
             e.dataTransfer.effectAllowed = "move";
@@ -949,15 +694,18 @@ function App() {
 
   const [mainTab, setMainTab] = useState<MainTab>("schedule");
   const [scheduleTab, setScheduleTab] = useState<ScheduleTab>("today");
-  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  // Edit modal state
+  const [editItemId, setEditItemId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const [editTime, setEditTime] = useState("");
   const [editType, setEditType] = useState<"event" | "reminder">("event");
-  const [newItemDate, setNewItemDate] = useState<string | null>(null);
-  const [newItemText, setNewItemText] = useState("");
-  const [newItemType, setNewItemType] = useState<"event" | "reminder">("event");
-  const [newItemTime, setNewItemTime] = useState(getNowTime());
-  const [rebuildingId, setRebuildingId] = useState<string | null>(null);
+  // New item modal state
+  const [newModalDate, setNewModalDate] = useState<string | null>(null);
+  const [newModalText, setNewModalText] = useState("");
+  const [newModalType, setNewModalType] = useState<"event" | "reminder">("event");
+  const [newModalTime, setNewModalTime] = useState(getNowTime());
+  // Rebuild modal state
+  const [rebuildItemId, setRebuildItemId] = useState<string | null>(null);
   const [rebuildDate, setRebuildDate] = useState(getToday());
   const [rebuildTime, setRebuildTime] = useState(getNowTime());
   const [dragId, setDragId] = useState<string | null>(null);
@@ -1128,68 +876,83 @@ function App() {
     return () => vv.removeEventListener("resize", onResize);
   }, []);
 
-  /* ── item CRUD ── */
+  /* ── Reminder notification checker ── */
 
-  const addItem = (date: string) => {
-    const trimmed = newItemText.trim();
-    if (!trimmed || newItemDate !== date) return;
-    if (newItemType === "reminder" && !newItemTime) return;
-    const dayItems = items.filter((e) => e.date === date);
-    const maxOrder = dayItems.reduce((max, e) => Math.max(max, e.sortOrder), 0);
-    const item: PlanItem = {
-      id: crypto.randomUUID(),
-      type: newItemType,
-      text: trimmed,
-      date,
-      time: newItemType === "reminder" ? newItemTime : undefined,
-      createdAt: Date.now(),
-      sortOrder: maxOrder + 1000,
-    };
-    setItems((prev) => [item, ...prev]);
-    setNewItemText("");
-    setNewItemTime(getNowTime());
-    setNewItemType("event");
-    setNewItemDate(null);
+  const NOTIFIED_KEY = "tooplan-notified";
+
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+  const notifiedRef = useRef<Set<string>>(
+    new Set(JSON.parse(localStorage.getItem(NOTIFIED_KEY) || "[]")),
+  );
+
+  // Persist notified IDs to localStorage so they survive page reloads
+  const persistNotified = () => {
+    localStorage.setItem(NOTIFIED_KEY, JSON.stringify([...notifiedRef.current]));
   };
+
+  useEffect(() => {
+    let permissionGranted = false;
+
+    const checkReminders = async () => {
+      const currentItems = itemsRef.current;
+
+      // Clean up: if a previously notified reminder was rebuilt to a future time, allow it to notify again
+      let dirty = false;
+      for (const id of notifiedRef.current) {
+        const item = currentItems.find((i) => i.id === id);
+        if (item && !isItemExpired(item)) {
+          notifiedRef.current.delete(id);
+          dirty = true;
+        }
+      }
+      if (dirty) persistNotified();
+
+      for (const item of currentItems) {
+        if (item.type === "reminder" && item.time && !notifiedRef.current.has(item.id) && isItemExpired(item)) {
+          if (!permissionGranted) {
+            try {
+              const granted = await isPermissionGranted();
+              if (!granted) {
+                const perm = await requestPermission();
+                permissionGranted = perm === "granted";
+              } else {
+                permissionGranted = true;
+              }
+            } catch {
+              // Not running in Tauri context
+              continue;
+            }
+          }
+
+          if (permissionGranted) {
+            try {
+              await sendNotification({
+                title: "⏰ 提醒到期",
+                body: item.text,
+              });
+              notifiedRef.current.add(item.id);
+              persistNotified();
+            } catch {
+              // Notification failed, skip
+            }
+          }
+        }
+      }
+    };
+
+    // Run initial check
+    checkReminders();
+
+    // Check every 30 seconds
+    const interval = setInterval(checkReminders, 30_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  /* ── item CRUD ── */
 
   const deleteItem = (id: string) => {
     setItems((prev) => prev.filter((e) => e.id !== id));
-  };
-
-  const startEdit = (id: string) => {
-    const ev = items.find((e) => e.id === id);
-    if (!ev) return;
-    setEditingItemId(id);
-    setEditText(ev.text);
-    setEditTime(ev.time || getNowTime());
-    setEditType(ev.type);
-  };
-
-  const doSaveEdit = () => {
-    if (!editingItemId) return;
-    const trimmed = editText.trim();
-    if (!trimmed) {
-      deleteItem(editingItemId);
-      return;
-    }
-    setItems((prev) =>
-      prev.map((e) =>
-        e.id === editingItemId
-          ? { ...e, text: trimmed, type: editType, time: editType === "reminder" ? editTime : undefined }
-          : e,
-      ),
-    );
-    setEditingItemId(null);
-    setEditText("");
-    setEditTime("");
-    setEditType("event");
-  };
-
-  const doCancelEdit = () => {
-    setEditingItemId(null);
-    setEditText("");
-    setEditTime("");
-    setEditType("event");
   };
 
   const copyItem = (id: string) => {
@@ -1206,30 +969,99 @@ function App() {
     setItems((prev) => [copy, ...prev]);
   };
 
-  const startRebuild = (id: string) => {
+  // ── Edit modal ──
+
+  const openEditModal = (id: string) => {
+    const ev = items.find((e) => e.id === id);
+    if (!ev) return;
+    setEditItemId(id);
+    setEditText(ev.text);
+    setEditTime(ev.time || getNowTime());
+    setEditType(ev.type);
+  };
+
+  const closeEditModal = useCallback(() => {
+    setEditItemId(null);
+  }, []);
+
+  const saveEditModal = () => {
+    if (!editItemId) return;
+    const trimmed = editText.trim();
+    if (!trimmed) {
+      deleteItem(editItemId);
+      closeEditModal();
+      return;
+    }
+    setItems((prev) =>
+      prev.map((e) =>
+        e.id === editItemId
+          ? { ...e, text: trimmed, type: editType, time: editType === "reminder" ? editTime : undefined }
+          : e,
+      ),
+    );
+    closeEditModal();
+  };
+
+  // ── New item modal ──
+
+  const openNewItemModal = (date: string) => {
+    setNewModalDate(date);
+    setNewModalText("");
+    setNewModalType("event");
+    setNewModalTime(getNowTime());
+  };
+
+  const closeNewItemModal = useCallback(() => {
+    setNewModalDate(null);
+  }, []);
+
+  const addNewItemFromModal = () => {
+    const date = newModalDate;
+    if (!date) return;
+    const trimmed = newModalText.trim();
+    if (!trimmed) return;
+    if (newModalType === "reminder" && !newModalTime) return;
+    const dayItems = items.filter((e) => e.date === date);
+    const maxOrder = dayItems.reduce((max, e) => Math.max(max, e.sortOrder), 0);
+    const item: PlanItem = {
+      id: crypto.randomUUID(),
+      type: newModalType,
+      text: trimmed,
+      date,
+      time: newModalType === "reminder" ? newModalTime : undefined,
+      createdAt: Date.now(),
+      sortOrder: maxOrder + 1000,
+    };
+    setItems((prev) => [item, ...prev]);
+    closeNewItemModal();
+  };
+
+  // ── Rebuild modal ──
+
+  const openRebuildModal = (id: string) => {
     const item = items.find((e) => e.id === id);
     if (!item) return;
-    setRebuildingId(id);
+    setRebuildItemId(id);
     setRebuildDate(item.date);
     setRebuildTime(item.time || getNowTime());
   };
 
-  const saveRebuild = () => {
-    if (!rebuildingId) return;
+  const closeRebuildModal = useCallback(() => {
+    setRebuildItemId(null);
+  }, []);
+
+  const saveRebuildModal = () => {
+    if (!rebuildItemId) return;
     const dayItems = items.filter((e) => e.date === rebuildDate);
     const maxOrder = dayItems.reduce((max, e) => Math.max(max, e.sortOrder), 0);
     setItems((prev) =>
       prev.map((e) =>
-        e.id === rebuildingId
+        e.id === rebuildItemId
           ? { ...e, date: rebuildDate, time: rebuildTime, createdAt: Date.now(), sortOrder: maxOrder + 1000 }
           : e,
       ),
     );
-    setRebuildingId(null);
-  };
-
-  const cancelRebuild = () => {
-    setRebuildingId(null);
+    closeRebuildModal();
   };
 
   /* ── drag reorder ── */
@@ -1283,10 +1115,23 @@ function App() {
     .sort((a, b) => b.date.localeCompare(a.date) || a.sortOrder - b.sortOrder);
   const historyGroups = groupByDate(historyItems);
 
+  const [futureModalOpen, setFutureModalOpen] = useState(false);
   const [futurePickerDate, setFuturePickerDate] = useState(getNextWeekday());
   const [futurePickerText, setFuturePickerText] = useState("");
   const [futurePickerType, setFuturePickerType] = useState<"event" | "reminder">("event");
   const [futurePickerTime, setFuturePickerTime] = useState(getNowTime());
+
+  const openFutureModal = useCallback(() => {
+    setFuturePickerDate(getNextWeekday());
+    setFuturePickerText("");
+    setFuturePickerType("event");
+    setFuturePickerTime(getNowTime());
+    setFutureModalOpen(true);
+  }, []);
+
+  const closeFutureModal = useCallback(() => {
+    setFutureModalOpen(false);
+  }, []);
 
   return (
     <div className="app">
@@ -1349,37 +1194,13 @@ function App() {
               date={today}
               isToday
               items={todayItems}
-              editingItemId={editingItemId}
-              editText={editText}
-              editTime={editTime}
-              editType={editType}
-              rebuildingId={rebuildingId}
-              rebuildDate={rebuildDate}
-              rebuildTime={rebuildTime}
-              newItemDate={newItemDate}
-              newItemText={newItemText}
-              newItemType={newItemType}
-              newItemTime={newItemTime}
               dragId={dragId}
               dragOverId={dragOverId}
-              onEditTextChange={setEditText}
-              onEditTimeChange={setEditTime}
-              onEditTypeChange={setEditType}
-              onStartEdit={startEdit}
-              onSaveEdit={doSaveEdit}
-              onCancelEdit={doCancelEdit}
+              onEdit={openEditModal}
               onDelete={deleteItem}
               onCopy={copyItem}
-              onStartRebuild={startRebuild}
-              onRebuildDateChange={setRebuildDate}
-              onRebuildTimeChange={setRebuildTime}
-              onSaveRebuild={saveRebuild}
-              onCancelRebuild={cancelRebuild}
-              newItemDateChange={setNewItemDate}
-              newItemTextChange={setNewItemText}
-              newItemTypeChange={setNewItemType}
-              newItemTimeChange={setNewItemTime}
-              onAddItem={addItem}
+              onRebuild={openRebuildModal}
+              onAdd={openNewItemModal}
               onMoveItem={moveItem}
               onSetDragId={setDragId}
               onSetDragOverId={setDragOverId}
@@ -1403,37 +1224,13 @@ function App() {
                   items={getItemsForDay(date)}
                   collapsed={isCollapsed}
                   onToggleCollapse={() => toggleExpandDay(date)}
-                  editingItemId={editingItemId}
-                  editText={editText}
-                  editTime={editTime}
-                  editType={editType}
-                  rebuildingId={rebuildingId}
-                  rebuildDate={rebuildDate}
-                  rebuildTime={rebuildTime}
-                  newItemDate={newItemDate}
-                  newItemText={newItemText}
-                  newItemType={newItemType}
-                  newItemTime={newItemTime}
                   dragId={dragId}
                   dragOverId={dragOverId}
-                  onEditTextChange={setEditText}
-                  onEditTimeChange={setEditTime}
-                  onEditTypeChange={setEditType}
-                  onStartEdit={startEdit}
-                  onSaveEdit={doSaveEdit}
-                  onCancelEdit={doCancelEdit}
+                  onEdit={openEditModal}
                   onDelete={deleteItem}
                   onCopy={copyItem}
-                  onStartRebuild={startRebuild}
-                  onRebuildDateChange={setRebuildDate}
-                  onRebuildTimeChange={setRebuildTime}
-                  onSaveRebuild={saveRebuild}
-                  onCancelRebuild={cancelRebuild}
-                  newItemDateChange={setNewItemDate}
-                  newItemTextChange={setNewItemText}
-                  newItemTypeChange={setNewItemType}
-                  newItemTimeChange={setNewItemTime}
-                  onAddItem={addItem}
+                  onRebuild={openRebuildModal}
+                  onAdd={openNewItemModal}
                   onMoveItem={moveItem}
                   onSetDragId={setDragId}
                   onSetDragOverId={setDragOverId}
@@ -1449,85 +1246,12 @@ function App() {
         {mainTab === "schedule" && scheduleTab === "future" && (
           <div className="grouped-list">
             <div className="future-add-card">
-              <div className="future-add-row">
-                <input
-                  type="date"
-                  className="future-date-input"
-                  value={futurePickerDate}
-                  min={getNextWeekday()}
-                  onChange={(e) => setFuturePickerDate(e.target.value)}
-                  onFocus={scrollInputIntoView}
-                />
-                <input
-                  className="add-item-input"
-                  type="text"
-                  placeholder="输入内容..."
-                  value={futurePickerText}
-                  onChange={(e) => setFuturePickerText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && futurePickerText.trim()) {
-                      const trimmed = futurePickerText.trim();
-                      const item: PlanItem = {
-                        id: crypto.randomUUID(),
-                        type: futurePickerType,
-                        text: trimmed,
-                        date: futurePickerDate,
-                        time: futurePickerType === "reminder" ? futurePickerTime : undefined,
-                        createdAt: Date.now(),
-                        sortOrder: Date.now(),
-                      };
-                      setItems((prev) => [item, ...prev]);
-                      setFuturePickerText("");
-                    }
-                  }}
-                  onFocus={scrollInputIntoView}
-                  maxLength={200}
-                />
-                <button
-                  className="event-btn add-confirm-btn"
-                  onClick={() => {
-                    if (futurePickerText.trim()) {
-                      const trimmed = futurePickerText.trim();
-                      const item: PlanItem = {
-                        id: crypto.randomUUID(),
-                        type: futurePickerType,
-                        text: trimmed,
-                        date: futurePickerDate,
-                        time: futurePickerType === "reminder" ? futurePickerTime : undefined,
-                        createdAt: Date.now(),
-                        sortOrder: Date.now(),
-                      };
-                      setItems((prev) => [item, ...prev]);
-                      setFuturePickerText("");
-                    }
-                  }}
-                  disabled={!futurePickerText.trim() || (futurePickerType === "reminder" && !futurePickerTime)}
-                  title="添加"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                  </svg>
-                </button>
-              </div>
-              <div className="future-add-meta">
-                <div className="add-type-toggle">
-                  <button
-                    className={`type-btn ${futurePickerType === "event" ? "active" : ""}`}
-                    onClick={() => setFuturePickerType("event")}
-                  >
-                    事件
-                  </button>
-                  <button
-                    className={`type-btn ${futurePickerType === "reminder" ? "active" : ""}`}
-                    onClick={() => setFuturePickerType("reminder")}
-                  >
-                    提醒
-                  </button>
-                </div>
-                {futurePickerType === "reminder" && (
-                  <TimePicker value={futurePickerTime} onChange={setFuturePickerTime} />
-                )}
-              </div>
+              <button className="add-event-btn" onClick={openFutureModal}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+                添加
+              </button>
             </div>
 
             {futureGroups.length === 0 ? (
@@ -1548,28 +1272,12 @@ function App() {
                   <div className="date-group-body">
                     <DraggableEventList
                       items={sortByOrder(group.items)}
-                      editingItemId={editingItemId}
-                      editText={editText}
-                      editTime={editTime}
-                      editType={editType}
-                      rebuildingId={rebuildingId}
-                      rebuildDate={rebuildDate}
-                      rebuildTime={rebuildTime}
                       dragId={dragId}
                       dragOverId={dragOverId}
-                      onEditTextChange={setEditText}
-                      onEditTimeChange={setEditTime}
-                      onEditTypeChange={setEditType}
-                      onStartEdit={startEdit}
-                      onSaveEdit={doSaveEdit}
-                      onCancelEdit={doCancelEdit}
+                      onEdit={openEditModal}
                       onDelete={deleteItem}
                       onCopy={copyItem}
-                      onStartRebuild={startRebuild}
-                      onRebuildDateChange={setRebuildDate}
-                      onRebuildTimeChange={setRebuildTime}
-                      onSaveRebuild={saveRebuild}
-                      onCancelRebuild={cancelRebuild}
+                      onRebuild={openRebuildModal}
                       onMoveItem={moveItem}
                       onSetDragId={setDragId}
                       onSetDragOverId={setDragOverId}
@@ -1606,28 +1314,12 @@ function App() {
                     <div className="date-group-body">
                       <DraggableEventList
                         items={sortByOrder(group.items)}
-                        editingItemId={editingItemId}
-                        editText={editText}
-                        editTime={editTime}
-                        editType={editType}
-                        rebuildingId={rebuildingId}
-                        rebuildDate={rebuildDate}
-                        rebuildTime={rebuildTime}
                         dragId={dragId}
                         dragOverId={dragOverId}
-                        onEditTextChange={setEditText}
-                        onEditTimeChange={setEditTime}
-                        onEditTypeChange={setEditType}
-                        onStartEdit={startEdit}
-                        onSaveEdit={doSaveEdit}
-                        onCancelEdit={doCancelEdit}
+                        onEdit={openEditModal}
                         onDelete={deleteItem}
                         onCopy={copyItem}
-                        onStartRebuild={startRebuild}
-                        onRebuildDateChange={setRebuildDate}
-                        onRebuildTimeChange={setRebuildTime}
-                        onSaveRebuild={saveRebuild}
-                        onCancelRebuild={cancelRebuild}
+                        onRebuild={openRebuildModal}
                         onMoveItem={moveItem}
                         onSetDragId={setDragId}
                         onSetDragOverId={setDragOverId}
@@ -1643,6 +1335,208 @@ function App() {
           </div>
         )}
       </main>
+
+      {/* ── Edit modal ── */}
+      <Modal open={editItemId !== null} onClose={closeEditModal} title="编辑">
+        <input
+          className="modal-input"
+          type="text"
+          value={editText}
+          onChange={(e) => setEditText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") saveEditModal();
+            if (e.key === "Escape") closeEditModal();
+          }}
+          autoFocus
+          maxLength={200}
+          placeholder="输入内容..."
+        />
+        <div className="modal-row">
+          <div className="add-type-toggle">
+            <button
+              className={`type-btn ${editType === "event" ? "active" : ""}`}
+              onClick={() => setEditType("event")}
+            >
+              事件
+            </button>
+            <button
+              className={`type-btn ${editType === "reminder" ? "active" : ""}`}
+              onClick={() => setEditType("reminder")}
+            >
+              提醒
+            </button>
+          </div>
+          {editType === "reminder" && (
+            <TimePicker value={editTime} onChange={setEditTime} />
+          )}
+        </div>
+        <div className="modal-actions">
+          <button className="modal-btn modal-btn-cancel" onClick={closeEditModal}>取消</button>
+          <button className="modal-btn modal-btn-primary" onClick={saveEditModal}>
+            保存
+          </button>
+        </div>
+      </Modal>
+
+      {/* ── New item modal ── */}
+      <Modal open={newModalDate !== null} onClose={closeNewItemModal} title="添加">
+        <input
+          className="modal-input"
+          type="text"
+          value={newModalText}
+          onChange={(e) => setNewModalText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") addNewItemFromModal();
+            if (e.key === "Escape") closeNewItemModal();
+          }}
+          autoFocus
+          maxLength={200}
+          placeholder={newModalType === "reminder" ? "输入提醒..." : "输入事件..."}
+        />
+        <div className="modal-row">
+          <div className="add-type-toggle">
+            <button
+              className={`type-btn ${newModalType === "event" ? "active" : ""}`}
+              onClick={() => setNewModalType("event")}
+            >
+              事件
+            </button>
+            <button
+              className={`type-btn ${newModalType === "reminder" ? "active" : ""}`}
+              onClick={() => setNewModalType("reminder")}
+            >
+              提醒
+            </button>
+          </div>
+          {newModalType === "reminder" && (
+            <TimePicker value={newModalTime} onChange={setNewModalTime} />
+          )}
+        </div>
+        <div className="modal-actions">
+          <button className="modal-btn modal-btn-cancel" onClick={closeNewItemModal}>取消</button>
+          <button
+            className="modal-btn modal-btn-primary"
+            onClick={addNewItemFromModal}
+            disabled={!newModalText.trim() || (newModalType === "reminder" && !newModalTime)}
+          >
+            添加
+          </button>
+        </div>
+      </Modal>
+
+      {/* ── Future add modal ── */}
+      <Modal open={futureModalOpen} onClose={closeFutureModal} title="添加">
+        <div className="modal-row">
+          <span className="modal-label">日期</span>
+          <input
+            type="date"
+            className="modal-input"
+            style={{ width: "auto", flex: 1 }}
+            value={futurePickerDate}
+            min={getNextWeekday()}
+            onChange={(e) => setFuturePickerDate(e.target.value)}
+          />
+        </div>
+        <input
+          className="modal-input"
+          type="text"
+          placeholder="输入内容..."
+          value={futurePickerText}
+          onChange={(e) => setFuturePickerText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              if (futurePickerText.trim()) {
+                const trimmed = futurePickerText.trim();
+                const item: PlanItem = {
+                  id: crypto.randomUUID(),
+                  type: futurePickerType,
+                  text: trimmed,
+                  date: futurePickerDate,
+                  time: futurePickerType === "reminder" ? futurePickerTime : undefined,
+                  createdAt: Date.now(),
+                  sortOrder: Date.now(),
+                };
+                setItems((prev) => [item, ...prev]);
+                setFuturePickerText("");
+                closeFutureModal();
+              }
+            }
+            if (e.key === "Escape") closeFutureModal();
+          }}
+          autoFocus
+          maxLength={200}
+        />
+        <div className="modal-row">
+          <div className="add-type-toggle">
+            <button
+              className={`type-btn ${futurePickerType === "event" ? "active" : ""}`}
+              onClick={() => setFuturePickerType("event")}
+            >
+              事件
+            </button>
+            <button
+              className={`type-btn ${futurePickerType === "reminder" ? "active" : ""}`}
+              onClick={() => setFuturePickerType("reminder")}
+            >
+              提醒
+            </button>
+          </div>
+          {futurePickerType === "reminder" && (
+            <TimePicker value={futurePickerTime} onChange={setFuturePickerTime} />
+          )}
+        </div>
+        <div className="modal-actions">
+          <button className="modal-btn modal-btn-cancel" onClick={closeFutureModal}>取消</button>
+          <button
+            className="modal-btn modal-btn-primary"
+            onClick={() => {
+              if (futurePickerText.trim()) {
+                const trimmed = futurePickerText.trim();
+                const item: PlanItem = {
+                  id: crypto.randomUUID(),
+                  type: futurePickerType,
+                  text: trimmed,
+                  date: futurePickerDate,
+                  time: futurePickerType === "reminder" ? futurePickerTime : undefined,
+                  createdAt: Date.now(),
+                  sortOrder: Date.now(),
+                };
+                setItems((prev) => [item, ...prev]);
+                setFuturePickerText("");
+                closeFutureModal();
+              }
+            }}
+            disabled={!futurePickerText.trim() || (futurePickerType === "reminder" && !futurePickerTime)}
+          >
+            添加
+          </button>
+        </div>
+      </Modal>
+
+      {/* ── Rebuild modal ── */}
+      <Modal open={rebuildItemId !== null} onClose={closeRebuildModal} title="重建提醒">
+        <div className="modal-row">
+          <span className="modal-label">日期</span>
+          <input
+            type="date"
+            className="modal-input"
+            style={{ width: "auto", flex: 1 }}
+            value={rebuildDate}
+            min={getToday()}
+            onChange={(e) => setRebuildDate(e.target.value)}
+          />
+        </div>
+        <div className="modal-row">
+          <span className="modal-label">时间</span>
+          <TimePicker value={rebuildTime} onChange={setRebuildTime} />
+        </div>
+        <div className="modal-actions">
+          <button className="modal-btn modal-btn-cancel" onClick={closeRebuildModal}>取消</button>
+          <button className="modal-btn modal-btn-primary" onClick={saveRebuildModal}>
+            保存
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }

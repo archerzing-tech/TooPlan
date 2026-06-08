@@ -2,6 +2,20 @@
 
 All notable changes to the TooPlan project will be documented in this file.
 
+## [0.3.0] — 2026-06-08
+
+### Added
+- 提醒/事件的录入和编辑改为弹出窗口（Modal），支持背景点击/Escape 关闭
+- 提醒到期推送通知 + 系统铃声（tauri-plugin-notification）
+- 未来日程的添加也改为弹出窗口
+- Huashu Design App 宣传动画（public/tooplan-hero.html）
+- brand-spec.md 品牌资产文档
+
+### Changed
+- EventItem/DayCard/DraggableEventList 组件大幅简化（移除了 ~30 个冗余 props）
+- 清理了内联编辑遗留的死 CSS 代码
+- 使用 useCallback 优化 Modal 组件性能
+
 ## [0.2.9] — 2026-06-05
 
 ### Added

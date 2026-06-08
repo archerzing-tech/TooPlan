@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1920">
+<title>TooPlan — 让每一天都有计划</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;400;500;600;700;800&family=Noto+Sans+SC:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+/* ─── Reset & Base ─── */
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#0f0f1a;font-family:'Inter','Noto Sans SC',sans-serif;color:#e8e8f0;-webkit-font-smoothing:antialiased}
+
+/* ─── Stage ─── */
+.stage{position:fixed;inset:0;width:100vw;height:100vh;overflow:hidden}
+@media(min-aspect-ratio:16/9){.stage{width:calc(100vh*16/9);left:50%;transform:translateX(-50%)}}
+@media(max-aspect-ratio:16/9){.stage{height:calc(100vw*9/16);top:50%;transform:translateY(-50%)}}
+
+/* ─── Scene ─── */
+.scene{position:absolute;inset:0;opacity:0;pointer-events:none;transition:opacity 1.2s cubic-bezier(0.16,1,0.3,1);will-change:opacity}
+.scene.visible{opacity:1;pointer-events:auto}
+
+/* ─── Gradient Brand ─── */
+:root{
+  --p:#6c63ff;--pl:#8b83ff;--pd:#5a52e0;
+  --a:#ff6b9d;--s:#2ecc71;--w:#f39c12;--d:#e74c3c;
+  --bg:#0f0f1a;--surface:#1a1a2e;--border:#2a2a45;
+  --grad:linear-gradient(135deg,#6c63ff,#ff6b9d);
+  --grad2:linear-gradient(135deg,#6c63ff 0%,#8b83ff 50%,#ff6b9d 100%);
+  --radius:14px;
+  --ease:cubic-bezier(0.16,1,0.3,1);
+  --bounce:cubic-bezier(0.34,1.56,0.64,1);
+}
+
+/* ─── Floating Particles ─── */
+.particles{position:absolute;inset:0;overflow:hidden;pointer-events:none;opacity:0;transition:opacity 2s ease}
+.scene.visible .particles{opacity:1}
+.particle{position:absolute;width:4px;height:4px;border-radius:50%;background:var(--p);opacity:0;animation:particleFloat 6s ease-in-out infinite}
+@keyframes particleFloat{
+  0%{opacity:0;transform:translateY(100vh) scale(0)}
+  20%{opacity:0.6}
+  80%{opacity:0.6}
+  100%{opacity:0;transform:translateY(-10vh) scale(1)}
+}
+.particle:nth-child(1){left:10%;animation-delay:0s;background:var(--p)}
+.particle:nth-child(2){left:25%;animation-delay:1.2s;background:var(--a);width:3px;height:3px}
+.particle:nth-child(3){left:40%;animation-delay:0.6s;background:var(--pl);width:5px;height:5px}
+.particle:nth-child(4){left:55%;animation-delay:2s;background:var(--a);width:3px;height:3px}
+.particle:nth-child(5){left:70%;animation-delay:1.5s;background:var(--p)}
+.particle:nth-child(6){left:85%;animation-delay:0.3s;background:var(--pl);width:5px;height:5px}
+.particle:nth-child(7){left:50%;animation-delay:2.5s;background:var(--a)}
+.particle:nth-child(8){left:15%;animation-delay:3s;background:var(--p);width:3px;height:3px}
+
+/* ─── Act 0: Logo Launch ─── */
+.act0{display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0f0f1a}
+.logo-container{position:relative;width:180px;height:180px;margin-bottom:32px}
+.logo-svg{width:100%;height:100%}
+.logo-bg{fill:url(#logograd);rx:42}
+.logo-check{stroke:white;stroke-width:36;stroke-linecap:round;stroke-linejoin:round;fill:none;stroke-dasharray:200;stroke-dashoffset:200;animation:drawCheck 1.2s 0.8s var(--bounce) forwards}
+.logo-dot{fill:white;opacity:0;animation:fadeDot 0.6s 1.6s ease forwards}
+@keyframes drawCheck{to{stroke-dashoffset:0}}
+@keyframes fadeDot{to{opacity:1}}
+.logo-glow{position:absolute;inset:-20px;border-radius:50%;background:radial-gradient(circle,rgba(108,99,255,0.3) 0%,transparent 70%);opacity:0;animation:glowPulse 2s 1s ease-in-out infinite}
+@keyframes glowPulse{0%,100%{opacity:0.4;transform:scale(1)}50%{opacity:0.8;transform:scale(1.1)}}
+.brand-title{font-size:72px;font-weight:900;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;letter-spacing:-2px;opacity:0;transform:translateY(20px);animation:slideUp 0.8s 1.8s var(--bounce) forwards}
+.brand-sub{font-size:20px;font-weight:300;color:rgba(232,232,240,0.5);letter-spacing:8px;margin-top:12px;opacity:0;transform:translateY(10px);animation:slideUp 0.6s 2.4s ease forwards}
+@keyframes slideUp{to{opacity:1;transform:translateY(0)}}
+.brand-tagline{font-size:16px;font-weight:400;color:rgba(232,232,240,0.35);margin-top:40px;letter-spacing:3px;opacity:0;animation:fadeIn 1s 3s ease forwards}
+@keyframes fadeIn{to{opacity:1}}
+
+/* ─── Act 1: Schedule Cards ─── */
+.act1{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px;background:#0f0f1a}
+.act1-header{text-align:center;margin-bottom:48px}
+.act1-title{font-size:42px;font-weight:700;color:#e8e8f0;opacity:0;transform:translateY(15px);transition:all 0.8s 0.2s var(--ease)}
+.scene.visible .act1-title{opacity:1;transform:translateY(0)}
+.act1-sub{font-size:16px;font-weight:400;color:rgba(232,232,240,0.4);margin-top:8px;opacity:0;transition:all 0.6s 0.4s var(--ease)}
+.scene.visible .act1-sub{opacity:1}
+.card-row{display:flex;gap:20px;margin-top:8px}
+.card{width:280px;background:var(--surface);border-radius:var(--radius);padding:0;box-shadow:0 8px 32px rgba(0,0,0,0.3);opacity:0;transform:translateY(30px);transition:all 0.8s var(--bounce)}
+.card:nth-child(1){transition-delay:0.3s}.card:nth-child(2){transition-delay:0.5s}.card:nth-child(3){transition-delay:0.7s}
+.scene.visible .card{opacity:1;transform:translateY(0)}
+.card-header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px 10px;border-bottom:1px solid var(--border)}
+.card-title{display:flex;align-items:center;gap:10px}
+.card-day{font-size:16px;font-weight:700;color:#e8e8f0}
+.card.today .card-day,.card-active .card-day{color:var(--p)}
+.card-date{font-size:13px;color:rgba(232,232,240,0.4);font-weight:500}
+.card-tag{display:inline-flex;padding:2px 8px;border-radius:100px;background:var(--p);color:white;font-size:11px;font-weight:700}
+.card-count{font-size:12px;color:rgba(232,232,240,0.3);font-weight:500}
+.card-body{padding:8px 12px;display:flex;flex-direction:column;gap:4px;min-height:120px}
+.card-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;border-left:3px solid transparent;background:rgba(255,255,255,0.02);transform:translateX(-10px);opacity:0;transition:all 0.5s var(--ease)}
+.card-item:nth-child(1){transition-delay:0.8s}.card-item:nth-child(2){transition-delay:1s}.card-item:nth-child(3){transition-delay:1.2s}
+.scene.visible .card-item{transform:translateX(0);opacity:1}
+.card-item-icon{width:16px;height:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.card-item-icon.cal{color:var(--p)}.card-item-icon.bell{color:var(--a)}
+.card-item-text{font-size:14px;color:rgba(232,232,240,0.85);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card-item-time{display:inline-flex;align-items:center;padding:1px 6px;border-radius:4px;background:var(--p);color:white;font-size:11px;font-weight:700;font-variant-numeric:tabular-nums}
+.card-item-time.warn{background:var(--w)}.card-item-time.danger{background:var(--d)}
+.card.today{border:1px solid rgba(108,99,255,0.2)}
+
+/* ─── Act 2: Reminder & Interaction ─── */
+.act2{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px;background:#0f0f1a}
+.act2-content{display:flex;gap:40px;align-items:center;width:100%;max-width:900px}
+.act2-left{flex:1;display:flex;flex-direction:column;gap:20px}
+.act2-title{font-size:36px;font-weight:700;color:#e8e8f0;opacity:0;transform:translateX(-20px);transition:all 0.8s 0.2s var(--ease)}
+.scene.visible .act2-title{opacity:1;transform:translateX(0)}
+.act2-sub{font-size:16px;font-weight:400;color:rgba(232,232,240,0.4);line-height:1.6;opacity:0;transition:all 0.6s 0.4s var(--ease)}
+.scene.visible .act2-sub{opacity:1}
+.phone-frame{width:280px;height:560px;background:var(--surface);border-radius:40px;border:3px solid rgba(255,255,255,0.08);padding:12px;box-shadow:0 24px 80px rgba(0,0,0,0.4);position:relative;opacity:0;transform:translateX(20px) scale(0.95);transition:all 0.8s 0.3s var(--bounce)}
+.scene.visible .phone-frame{opacity:1;transform:translateX(0) scale(1)}
+.phone-notch{width:120px;height:24px;background:#0f0f1a;border-radius:0 0 16px 16px;margin:0 auto 8px}
+.phone-screen{background:#0f0f1a;border-radius:28px;height:calc(100% - 44px);overflow:hidden;padding:12px;display:flex;flex-direction:column;gap:6px}
+.phone-header{font-size:14px;font-weight:700;color:rgba(232,232,240,0.6);padding:4px 8px;display:flex;justify-content:space-between}
+.phone-item{display:flex;align-items:center;gap:6px;padding:8px;border-radius:6px;background:rgba(255,255,255,0.03);border-left:3px solid transparent;transform:translateY(10px);opacity:0}
+.phone-item:nth-child(2){transition:all 0.5s 0.8s var(--ease)}
+.phone-item:nth-child(3){transition:all 0.5s 1s var(--ease)}
+.phone-item:nth-child(4){transition:all 0.5s 1.2s var(--ease)}
+.scene.visible .phone-item{opacity:1;transform:translateY(0)}
+.phone-item.warn{border-left-color:var(--w)}.phone-item.danger{border-left-color:var(--d);animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.7}}
+.phone-item .badge{padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;color:white}
+.phone-item .badge.p{background:var(--p)}.phone-item .badge.w{background:var(--w)}.phone-item .badge.d{background:var(--d)}
+.phone-item .txt{font-size:12px;color:rgba(232,232,240,0.8);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.notif-popup{position:absolute;top:100px;right:-40px;background:var(--surface);border-radius:12px;padding:14px 18px;box-shadow:0 8px 32px rgba(0,0,0,0.4);border:1px solid var(--border);opacity:0;transform:translateX(20px);transition:all 0.6s 1.8s var(--bounce);width:200px;z-index:10}
+.scene.visible .notif-popup{opacity:1;transform:translateX(0)}
+.notif-title{font-size:12px;font-weight:600;color:var(--p);margin-bottom:4px;display:flex;align-items:center;gap:6px}
+.notif-body{font-size:13px;color:rgba(232,232,240,0.8);line-height:1.4}
+.notif-icon{width:20px;height:20px;border-radius:50%;background:var(--p);display:flex;align-items:center;justify-content:center;font-size:12px;color:white;flex-shrink:0}
+.notif-time{font-size:10px;color:rgba(232,232,240,0.3);margin-top:6px}
+
+/* ─── Act 3: Drag & Drop ─── */
+.act3{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px;background:#0f0f1a}
+.act3-content{display:flex;gap:60px;align-items:center}
+.act3-left{text-align:right}
+.act3-title{font-size:36px;font-weight:700;color:#e8e8f0;opacity:0;transform:translateY(15px);transition:all 0.8s 0.2s var(--ease)}
+.scene.visible .act3-title{opacity:1;transform:translateY(0)}
+.act3-sub{font-size:16px;font-weight:400;color:rgba(232,232,240,0.4);margin-top:8px;opacity:0;transition:all 0.6s 0.4s var(--ease)}
+.scene.visible .act3-sub{opacity:1}
+.drag-demo{position:relative;width:320px;height:320px;background:var(--surface);border-radius:var(--radius);padding:16px;box-shadow:0 8px 32px rgba(0,0,0,0.3);opacity:0;transition:all 0.8s 0.3s var(--ease)}
+.scene.visible .drag-demo{opacity:1}
+.drag-list{display:flex;flex-direction:column;gap:8px}
+.drag-item{display:flex;align-items:center;gap:8px;padding:12px;border-radius:8px;background:rgba(255,255,255,0.03);cursor:grab;position:relative;transition:transform 0.3s var(--bounce);border-left:3px solid var(--p)}
+.drag-item .handle{width:14px;height:14px;color:rgba(232,232,240,0.2);flex-shrink:0;display:flex;align-items:center;justify-content:center;gap:2px;flex-wrap:wrap}
+.drag-item .handle dot{width:3px;height:3px;border-radius:50%;background:currentColor;display:block}
+.drag-item .label{font-size:13px;color:rgba(232,232,240,0.8);flex:1}
+.drag-item .icon{width:14px;height:14px;flex-shrink:0}
+.drag-item.purple .icon{color:var(--p)}.drag-item.pink .icon{color:var(--a)}
+.drag-item.dragging{opacity:0.4;transform:scale(0.95);border-left-color:var(--a)}
+.drag-item.dropped{animation:dragDrop 0.5s var(--bounce)}
+@keyframes dragDrop{0%{transform:translateY(0)}30%{transform:translateY(-8px) scale(1.02)}60%{transform:translateY(4px)}100%{transform:translateY(0)}}
+.drag-arrow{position:absolute;right:16px;top:50%;transform:translateY(-50%);color:var(--p);opacity:0;transition:all 0.5s 1.5s var(--ease)}
+.scene.visible .drag-arrow{opacity:1;right:8px}
+.drag-hint{font-size:11px;color:rgba(232,232,240,0.25);margin-top:12px;text-align:center;opacity:0;transition:opacity 0.5s 2s ease}
+.scene.visible .drag-hint{opacity:1}
+
+/* ─── Act 4: Hero Reveal ─── */
+.act4{display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(135deg,#0f0f1a 0%,#1a1a2e 50%,#0f0f1a 100%)}
+.act4-content{text-align:center}
+.hero-icon{width:120px;height:120px;margin:0 auto 24px;position:relative}
+.hero-icon svg{width:100%;height:100%}
+.hero-icon-bg{fill:url(#logograd);rx:28}
+.hero-check{stroke:white;stroke-width:32;stroke-linecap:round;stroke-linejoin:round;fill:none;stroke-dasharray:180;stroke-dashoffset:180;transition:stroke-dashoffset 1.2s 0.5s var(--bounce)}
+.scene.visible .hero-check{stroke-dashoffset:0}
+.hero-dot{fill:white;opacity:0;transition:opacity 0.5s 1.5s ease}
+.scene.visible .hero-dot{opacity:1}
+.hero-title{font-size:80px;font-weight:900;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;letter-spacing:-3px;opacity:0;transform:scale(0.9);transition:all 0.8s 0.8s var(--bounce)}
+.scene.visible .hero-title{opacity:1;transform:scale(1)}
+.hero-tagline{font-size:22px;font-weight:300;color:rgba(232,232,240,0.4);margin-top:16px;letter-spacing:4px;opacity:0;transition:all 0.6s 1.2s ease}
+.scene.visible .hero-tagline{opacity:1}
+.hero-features{display:flex;gap:24px;margin-top:48px;justify-content:center}
+.hero-feat{text-align:center;opacity:0;transform:translateY(15px)}
+.hero-feat:nth-child(1){transition:all 0.5s 1.6s var(--bounce)}
+.hero-feat:nth-child(2){transition:all 0.5s 1.8s var(--bounce)}
+.hero-feat:nth-child(3){transition:all 0.5s 2s var(--bounce)}
+.hero-feat:nth-child(4){transition:all 0.5s 2.2s var(--bounce)}
+.scene.visible .hero-feat{opacity:1;transform:translateY(0)}
+.hero-feat-icon{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 10px}
+.hero-feat-icon.p{background:rgba(108,99,255,0.15)}.hero-feat-icon.a{background:rgba(255,107,157,0.15)}.hero-feat-icon.s{background:rgba(46,204,113,0.15)}.hero-feat-icon.w{background:rgba(243,156,18,0.15)}
+.hero-feat-label{font-size:13px;font-weight:500;color:rgba(232,232,240,0.5)}
+.hero-feat-value{font-size:24px;font-weight:800;color:#e8e8f0;margin-bottom:4px}
+
+/* ─── Navigation Dots ─── */
+.nav-dots{position:fixed;right:32px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:12px;z-index:100}
+.nav-dot{width:10px;height:10px;border-radius:50%;border:2px solid rgba(232,232,240,0.2);background:transparent;cursor:pointer;transition:all 0.3s var(--ease);-webkit-tap-highlight-color:transparent}
+.nav-dot:hover{border-color:rgba(232,232,240,0.4)}
+.nav-dot.active{border-color:var(--p);background:var(--p);box-shadow:0 0 12px rgba(108,99,255,0.3)}
+.nav-dot-label{position:absolute;right:22px;top:50%;transform:translateY(-50%);font-size:11px;color:rgba(232,232,240,0.25);white-space:nowrap;pointer-events:none;opacity:0;transition:opacity 0.3s ease}
+.nav-dot:hover + .nav-dot-label{opacity:1}
+
+/* ─── Progress Bar ─── */
+.progress{position:fixed;bottom:0;left:0;height:3px;background:var(--grad);z-index:100;transition:width 0.8s var(--ease);width:0%}
+
+/* ─── Controls ─── */
+.controls{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:100;display:flex;gap:16px;align-items:center}
+.ctrl-btn{width:40px;height:40px;border-radius:50%;border:1px solid rgba(255,255,255,0.1);background:rgba(26,26,46,0.8);color:rgba(232,232,240,0.6);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.3s ease;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.ctrl-btn:hover{border-color:var(--p);color:#e8e8f0;background:rgba(108,99,255,0.1)}
+.ctrl-btn svg{width:18px;height:18px}
+.ctrl-label{font-size:12px;color:rgba(232,232,240,0.3);min-width:60px;text-align:center;font-variant-numeric:tabular-nums;letter-spacing:0.5px}
+</style>
+</head>
+<body>
+
+<div class="stage" id="stage">
+  <!-- SVG Defs -->
+  <svg style="position:absolute;width:0;height:0">
+    <defs>
+      <linearGradient id="logograd" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#6c63ff"/>
+        <stop offset="100%" stop-color="#ff6b9d"/>
+      </linearGradient>
+    </defs>
+  </svg>
+
+  <!-- ─── Act 0: Logo Launch ─── -->
+  <div class="scene act0 visible" data-act="0">
+    <div class="particles">
+      <div class="particle"></div><div class="particle"></div><div class="particle"></div>
+      <div class="particle"></div><div class="particle"></div><div class="particle"></div>
+      <div class="particle"></div><div class="particle"></div>
+    </div>
+    <div class="logo-container">
+      <div class="logo-glow"></div>
+      <svg class="logo-svg" viewBox="0 0 512 512">
+        <rect class="logo-bg" x="42" y="42" width="428" height="428" rx="96"/>
+        <polyline class="logo-check" points="180,280 250,350 360,210"/>
+        <circle class="logo-dot" cx="380" cy="190" r="14"/>
+      </svg>
+    </div>
+    <div class="brand-title">TooPlan</div>
+    <div class="brand-sub">PLAN EVERY DAY</div>
+    <div class="brand-tagline">✦ 让每一天都有计划 ✦</div>
+  </div>
+
+  <!-- ─── Act 1: Schedule Views ─── -->
+  <div class="scene act1" data-act="1">
+    <div class="particles">
+      <div class="particle"></div><div class="particle"></div><div class="particle"></div>
+      <div class="particle"></div><div class="particle"></div><div class="particle"></div>
+    </div>
+    <div class="act1-header">
+      <div class="act1-title">三种视图，一目了然</div>
+      <div class="act1-sub">今天 · 本周 · 未来 — 你的计划尽在掌握</div>
+    </div>
+    <div class="card-row">
+      <div class="card today">
+        <div class="card-header">
+          <div class="card-title">
+            <span class="card-day">今天</span>
+            <span class="card-tag">今天</span>
+          </div>
+          <span class="card-count">3 项</span>
+        </div>
+        <div class="card-body">
+          <div class="card-item">
+            <span class="card-item-icon cal"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg></span>
+            <span class="card-item-time">14:00</span>
+            <span class="card-item-text">产品评审会议</span>
+          </div>
+          <div class="card-item">
+            <span class="card-item-icon bell"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 003.4 0"/></svg></span>
+            <span class="card-item-time warn">16:30</span>
+            <span class="card-item-text">提交周报</span>
+          </div>
+          <div class="card-item">
+            <span class="card-item-icon cal"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg></span>
+            <span class="card-item-text">健身 · 有氧训练</span>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span class="card-day">本周</span>
+          </div>
+          <span class="card-count">12 项</span>
+        </div>
+        <div class="card-body">
+          <div class="card-item">
+            <span class="card-item-icon cal"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg></span>
+            <span class="card-item-text">周二 · 团队站会</span>
+          </div>
+          <div class="card-item">
+            <span class="card-item-icon bell"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 003.4 0"/></svg></span>
+            <span class="card-item-time danger">09:00</span>
+            <span class="card-item-text">周三 · 牙医预约</span>
+          </div>
+          <div class="card-item">
+            <span class="card-item-icon cal"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg></span>
+            <span class="card-item-text">周五 · 项目里程碑</span>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span class="card-day">未来</span>
+          </div>
+          <span class="card-count">5 项</span>
+        </div>
+        <div class="card-body">
+          <div class="card-item">
+            <span class="card-item-icon bell"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 003.4 0"/></svg></span>
+            <span class="card-item-time">10:00</span>
+            <span class="card-item-text">下周一 · 季度汇报</span>
+          </div>
+          <div class="card-item">
+            <span class="card-item-icon cal"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg></span>
+            <span class="card-item-text">下周三 · 团建活动</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Act 2: Reminder & Notifications ─── -->
+  <div class="scene act2" data-act="2">
+    <div class="particles">
+      <div class="particle"></div><div class="particle"></div><div class="particle"></div>
+      <div class="particle"></div><div class="particle"></div>
+    </div>
+    <div class="act2-content">
+      <div class="act2-left">
+        <div class="act2-title">智能提醒，准时送达</div>
+        <div class="act2-sub">
+          设置提醒时间，到期自动推送通知。<br>
+          紧急事项变红提醒，重要事务提前预警。<br>
+          不错过每一个重要时刻。
+        </div>
+        <div class="act2-sub" style="font-size:14px;color:rgba(232,232,240,0.3);margin-top:8px">
+          ⏰ 调用系统铃声，想忘都难
+        </div>
+      </div>
+      <div style="position:relative">
+        <div class="phone-frame">
+          <div class="phone-notch"></div>
+          <div class="phone-screen">
+            <div class="phone-header"><span>今天</span><span style="color:rgba(232,232,240,0.2)">3 项</span></div>
+            <div class="phone-item"><span class="badge p">10:00</span><span class="txt">团队站会</span></div>
+            <div class="phone-item warn"><span class="badge w">14:30</span><span class="txt">提交设计稿</span></div>
+            <div class="phone-item danger"><span class="badge d">16:00</span><span class="txt">🔴 牙医预约</span></div>
+            <div class="phone-item" style="border-left-color:var(--p);margin-top:12px;background:rgba(108,99,255,0.06)">
+              <span class="txt" style="color:rgba(232,232,240,0.4);font-size:11px">点击 + 添加新事项</span>
+            </div>
+          </div>
+        </div>
+        <div class="notif-popup">
+          <div class="notif-title">
+            <span class="notif-icon">⏰</span>
+            提醒到期
+          </div>
+          <div class="notif-body">提交设计稿 · 14:30 已到期</div>
+          <div class="notif-time">刚刚</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Act 3: Drag & Drop ─── -->
+  <div class="scene act3" data-act="3">
+    <div class="act3-content">
+      <div class="act3-left" style="flex:1">
+        <div class="act3-title">拖拽排序，随心所欲</div>
+        <div class="act3-sub">
+          长按拖拽调整事项顺序，<br>
+          触摸屏也支持，跟鼠标一样流畅。<br>
+          复制、重建、一键编辑 — <br>
+          所有操作触手可及。
+        </div>
+      </div>
+      <div class="drag-demo" style="flex-shrink:0">
+        <div class="drag-list">
+          <div class="drag-item purple">
+            <span class="handle"><dot></dot><dot></dot><dot></dot><dot></dot></span>
+            <span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg></span>
+            <span class="label">产品评审会议</span>
+          </div>
+          <div class="drag-item" style="border-left-color:var(--a);animation: dragDrop 0.5s 1.5s var(--bounce) both">
+            <span class="handle"><dot></dot><dot></dot><dot></dot><dot></dot></span>
+            <span class="icon" style="color:var(--a)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 003.4 0"/></svg></span>
+            <span class="label">提交周报</span>
+          </div>
+          <div class="drag-item pink" style="border-left-color:var(--a);opacity:0.4">
+            <span class="handle"><dot></dot><dot></dot><dot></dot><dot></dot></span>
+            <span class="icon" style="color:var(--a)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 003.4 0"/></svg></span>
+            <span class="label">牙医预约</span>
+          </div>
+        </div>
+        <div class="drag-arrow">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+        <div class="drag-hint">↕ 长按拖拽调整顺序</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Act 4: Hero Reveal ─── -->
+  <div class="scene act4" data-act="4">
+    <div class="act4-content">
+      <div class="hero-icon">
+        <svg viewBox="0 0 512 512">
+          <rect class="hero-icon-bg" x="42" y="42" width="428" height="428" rx="96"/>
+          <polyline class="hero-check" points="180,280 250,350 360,210"/>
+          <circle class="hero-dot" cx="380" cy="190" r="14"/>
+        </svg>
+      </div>
+      <div class="hero-title">TooPlan</div>
+      <div class="hero-tagline">让每一天都有计划</div>
+      <div class="hero-features">
+        <div class="hero-feat">
+          <div class="hero-feat-icon p">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#6c63ff" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          </div>
+          <div class="hero-feat-value">3</div>
+          <div class="hero-feat-label">视图模式</div>
+        </div>
+        <div class="hero-feat">
+          <div class="hero-feat-icon a">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ff6b9d" stroke-width="2"><path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 003.4 0"/></svg>
+          </div>
+          <div class="hero-feat-value">准时</div>
+          <div class="hero-feat-label">智能提醒</div>
+        </div>
+        <div class="hero-feat">
+          <div class="hero-feat-icon s">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2ecc71" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>
+          </div>
+          <div class="hero-feat-value">100%</div>
+          <div class="hero-feat-label">本地优先</div>
+        </div>
+        <div class="hero-feat">
+          <div class="hero-feat-icon w">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f39c12" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </div>
+          <div class="hero-feat-value">跨平台</div>
+          <div class="hero-feat-label">Android · 桌面</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Navigation ─── -->
+<div class="nav-dots" id="navDots">
+  <div class="nav-dot active" data-target="0"><div class="nav-dot-label">TooPlan</div></div>
+  <div class="nav-dot" data-target="1"><div class="nav-dot-label">视图</div></div>
+  <div class="nav-dot" data-target="2"><div class="nav-dot-label">提醒</div></div>
+  <div class="nav-dot" data-target="3"><div class="nav-dot-label">拖拽</div></div>
+  <div class="nav-dot" data-target="4"><div class="nav-dot-label">品牌</div></div>
+</div>
+
+<div class="progress" id="progress"></div>
+
+<div class="controls">
+  <button class="ctrl-btn" id="prevBtn" title="上一幕">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+  </button>
+  <button class="ctrl-btn" id="playBtn" title="自动播放">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+  </button>
+  <button class="ctrl-btn" id="replayBtn" title="重播">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+  </button>
+  <span class="ctrl-label" id="actLabel">1 / 5</span>
+  <button class="ctrl-btn" id="nextBtn" title="下一幕">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+  </button>
+</div>
+
+<script>
+const scenes = document.querySelectorAll('.scene');
+const dots = document.querySelectorAll('.nav-dot');
+const progress = document.getElementById('progress');
+const actLabel = document.getElementById('actLabel');
+const prevBtn = document.getElementById('prevBtn');
+const nextBtn = document.getElementById('nextBtn');
+const playBtn = document.getElementById('playBtn');
+const replayBtn = document.getElementById('replayBtn');
+let currentAct = 0;
+let isPlaying = false;
+let playTimer = null;
+const TOTAL = scenes.length;
+
+function showAct(idx){
+  idx = Math.max(0, Math.min(idx, TOTAL - 1));
+  if(idx === currentAct) return;
+  scenes.forEach((s,i)=>{
+    s.classList.toggle('visible', i === idx);
+  });
+  dots.forEach((d,i)=>{
+    d.classList.toggle('active', i === idx);
+  });
+  progress.style.width = ((idx + 1) / TOTAL * 100) + '%';
+  actLabel.textContent = (idx + 1) + ' / ' + TOTAL;
+  currentAct = idx;
+}
+
+function nextAct(){ showAct(currentAct + 1); }
+function prevAct(){ showAct(currentAct - 1); }
+
+prevBtn.addEventListener('click', prevAct);
+nextBtn.addEventListener('click', nextAct);
+
+dots.forEach(dot => {
+  dot.addEventListener('click', () => showAct(parseInt(dot.dataset.target)));
+});
+
+document.addEventListener('keydown', e => {
+  if(e.key === 'ArrowRight' || e.key === 'ArrowDown') nextAct();
+  if(e.key === 'ArrowLeft' || e.key === 'ArrowUp') prevAct();
+  if(e.key === ' ') { e.preventDefault(); togglePlay(); }
+  if(e.key >= '1' && e.key <= '5') showAct(parseInt(e.key) - 1);
+});
+
+function togglePlay(){
+  isPlaying = !isPlaying;
+  playBtn.innerHTML = isPlaying
+    ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>'
+    : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+  if(isPlaying){
+    playTimer = setInterval(() => {
+      if(currentAct >= TOTAL - 1){
+        stopPlay();
+        return;
+      }
+      nextAct();
+    }, 4000);
+  } else {
+    clearInterval(playTimer);
+  }
+}
+function stopPlay(){
+  clearInterval(playTimer);
+  isPlaying = false;
+  playBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+}
+
+playBtn.addEventListener('click', togglePlay);
+replayBtn.addEventListener('click', () => {
+  stopPlay();
+  showAct(0);
+});
+
+// Touch/swipe support
+let touchStartX = 0;
+document.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; });
+document.addEventListener('touchend', e => {
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  if(Math.abs(dx) > 60){
+    if(dx < 0) nextAct(); else prevAct();
+  }
+});
+
+// URL params: ?act=N or ?autoplay=1
+const url = new URL(location.href);
+const actParam = url.searchParams.get('act');
+if(actParam) showAct(parseInt(actParam) - 1);
+if(url.searchParams.has('autoplay')) togglePlay();
+</script>
+</body>
+</html>

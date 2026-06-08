@@ -706,94 +706,13 @@ body {
   background: rgba(231, 76, 60, 0.08);
 }
 
-.save-btn {
-  color: var(--success);
-}
-
-.save-btn:hover {
-  background: rgba(46, 204, 113, 0.1);
-  color: var(--success);
-}
-
-.cancel-btn:hover {
-  background: var(--border);
-  color: var(--text-secondary);
-}
-
 .copy-btn:hover,
 .rebuild-btn:hover {
   color: var(--primary);
   background: rgba(108, 99, 255, 0.08);
 }
 
-/* ──────────────── Edit / add rows ──────────────── */
 
-.event-edit-wrapper {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  animation: fadeIn 0.15s ease-out;
-}
-
-.edit-meta-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding-left: 4px;
-}
-
-.event-edit-row,
-.event-rebuild-row,
-.add-item-row {
-  flex: 1;
-  display: flex;
-  gap: 4px;
-  align-items: center;
-  animation: fadeIn 0.15s ease-out;
-}
-
-.event-edit-input,
-.add-item-input {
-  flex: 1;
-  padding: 7px 10px;
-  border: 2px solid var(--primary);
-  border-radius: var(--radius-xs);
-  font-size: 14px;
-  background: var(--surface);
-  color: var(--text);
-  outline: none;
-  font-family: inherit;
-  min-width: 0;
-}
-
-.event-edit-input:focus,
-.add-item-input:focus {
-  box-shadow: 0 0 0 3px rgba(108, 99, 255, 0.12);
-}
-
-.add-item-input::placeholder {
-  color: var(--text-muted);
-}
-
-.add-confirm-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.add-confirm-btn:not(:disabled):hover {
-  color: var(--success);
-  background: rgba(46, 204, 113, 0.1);
-}
-
-/* Add item extra row (type toggle + time) */
-
-.add-item-extra {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
 
 /* ──────────── Type toggle (event / reminder) ──────────── */
 
@@ -919,37 +838,6 @@ body {
   background: rgba(108, 99, 255, 0.1);
 }
 
-/* Rebuild date/time inputs */
-
-.rebuild-date-input {
-  padding: 6px 10px;
-  border: 2px solid var(--primary);
-  border-radius: var(--radius-xs);
-  font-size: 13px;
-  background: var(--surface);
-  color: var(--text);
-  outline: none;
-  transition: var(--transition);
-  font-family: inherit;
-  width: 148px;
-  flex-shrink: 0;
-}
-
-.rebuild-date-input:focus {
-  box-shadow: 0 0 0 3px rgba(108, 99, 255, 0.12);
-}
-
-.rebuild-date-input::-webkit-calendar-picker-indicator {
-  filter: invert(0.5);
-  cursor: pointer;
-}
-
-@media (prefers-color-scheme: dark) {
-  .rebuild-date-input::-webkit-calendar-picker-indicator {
-    filter: invert(0.8);
-  }
-}
-
 /* ──────────────── Add event button (card footer) ──────────────── */
 
 .add-event-btn {
@@ -981,69 +869,11 @@ body {
   background: var(--surface);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  padding: 12px 16px;
   transition: var(--transition);
 }
 
 .future-add-card:hover {
   box-shadow: var(--shadow-hover);
-}
-
-.future-add-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.future-add-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
-}
-
-.future-date-input {
-  padding: 8px 12px;
-  border: 2px solid var(--border);
-  border-radius: var(--radius-xs);
-  font-size: 13px;
-  background: var(--surface);
-  color: var(--text);
-  outline: none;
-  transition: var(--transition);
-  font-family: inherit;
-  flex-shrink: 0;
-  width: 148px;
-}
-
-@media (max-width: 400px) {
-  .future-date-input {
-    width: 110px;
-    padding: 7px 8px;
-    font-size: 12px;
-  }
-}
-
-.future-add-row .add-item-input {
-  min-width: 0;
-}
-
-.future-date-input:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(108, 99, 255, 0.12);
-}
-
-.future-date-input::-webkit-calendar-picker-indicator {
-  filter: invert(0.5);
-  cursor: pointer;
-}
-
-@media (prefers-color-scheme: dark) {
-  .future-date-input::-webkit-calendar-picker-indicator {
-    filter: invert(0.8);
-  }
 }
 
 /* ──────────────── Grouped list (Future / History) ──────────────── */
@@ -1117,6 +947,184 @@ body {
   font-weight: 500;
 }
 
+/* ──────────────── Modal ──────────────── */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: modalFadeIn 0.2s ease-out;
+  padding: 20px;
+}
+
+@keyframes modalFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.modal-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
+  width: 100%;
+  max-width: 380px;
+  animation: modalSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+
+@keyframes modalSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 8px;
+}
+
+.modal-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.modal-close-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.modal-close-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.modal-body {
+  padding: 12px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.modal-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 15px;
+  background: var(--surface);
+  color: var(--text);
+  outline: none;
+  font-family: inherit;
+  transition: var(--transition);
+}
+
+.modal-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(108, 99, 255, 0.1);
+}
+
+.modal-input::placeholder {
+  color: var(--text-muted);
+}
+
+.modal-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.modal-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.modal-btn {
+  flex: 1;
+  padding: 10px 16px;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+  font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.modal-btn-primary {
+  background: var(--primary);
+  color: white;
+}
+
+.modal-btn-primary:hover {
+  background: var(--primary-dark);
+  box-shadow: 0 2px 12px rgba(108, 99, 255, 0.3);
+}
+
+.modal-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.modal-btn-danger {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+}
+
+.modal-btn-danger:hover {
+  background: rgba(231, 76, 60, 0.08);
+}
+
+.modal-btn-cancel {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+
+.modal-btn-cancel:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
 /* ──────────────── Responsive ──────────────── */
 
 @media (max-width: 400px) {
@@ -1155,21 +1163,5 @@ body {
 
   .day-name {
     font-size: 14px;
-  }
-
-  .add-item-extra {
-    flex-wrap: wrap;
-  }
-
-  .add-time-input {
-    width: 80px;
-  }
-
-  .rebuild-date-input {
-    width: 110px;
-  }
-
-  .rebuild-time-input {
-    width: 80px;
   }
 }
