@@ -117,47 +117,22 @@ function getUrgency(item: PlanItem): Urgency {
   return "normal";
 }
 
-/* ──────────── TimePicker: hour + minute dropdowns ──────────── */
-
-const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
-const MINUTES = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, "0"));
+/* ──────────── TimePicker: native time input (clock dial on Android) ──────────── */
 
 function getDefaultPreset(minutesFromNow: number): string {
   const d = new Date(Date.now() + minutesFromNow * 60 * 1000);
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-function snapTo5(m: number): string {
-  return String(Math.round(m / 5) * 5).padStart(2, "0");
-}
-
 function TimePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const [hStr, mStr] = value.split(":");
-  const h = HOURS.includes(hStr) ? hStr : "00";
-  const mNum = parseInt(mStr, 10);
-  const m = !isNaN(mNum) && MINUTES.includes(snapTo5(mNum)) ? snapTo5(mNum) : "00";
-
   return (
     <div className="time-picker">
-      <select
-        className="time-picker-select"
-        value={h}
-        onChange={(e) => onChange(`${e.target.value}:${m}`)}
-      >
-        {HOURS.map((hVal) => (
-          <option key={hVal} value={hVal}>{hVal}</option>
-        ))}
-      </select>
-      <span className="time-picker-sep">:</span>
-      <select
-        className="time-picker-select"
-        value={m}
-        onChange={(e) => onChange(`${h}:${e.target.value}`)}
-      >
-        {MINUTES.map((mVal) => (
-          <option key={mVal} value={mVal}>{mVal}</option>
-        ))}
-      </select>
+      <input
+        type="time"
+        className="time-native-input"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
       {/* Quick presets */}
       <div className="time-presets">
         <button
@@ -412,8 +387,9 @@ function DayCard({
         </>
       ) : (
         <>
-          <div className="day-card-header">
+          <div className="day-card-header" onClick={onToggleCollapse}>
             <div className="day-card-title">
+              <ChevronDown size={14} className="collapse-chevron" />
               <span className="day-name">{getDayName(date)}</span>
               <span className="day-date">{getMonthDay(date)}</span>
               {isToday && <span className="today-tag">今天</span>}
@@ -728,7 +704,11 @@ function App() {
   const [rebuildTime, setRebuildTime] = useState(getNowTime());
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
-  const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
+  // Week view: past dates collapsed by default, today+future expanded by default; all can be toggled
+  const [expandedDays, setExpandedDays] = useState<Set<string>>(() => {
+    const dates = getWeekDates();
+    return new Set(dates.filter((d) => !isDateBeforeToday(d)));
+  });
 
   const toggleExpandDay = (date: string) => {
     setExpandedDays((prev) => {
@@ -1239,8 +1219,7 @@ function App() {
         {mainTab === "schedule" && scheduleTab === "week" && (
           <div className="week-grid">
             {weekDates.map((date) => {
-              const isPastDate = isDateBeforeToday(date);
-              const isCollapsed = isPastDate && !expandedDays.has(date);
+              const isCollapsed = !expandedDays.has(date);
               return (
                 <DayCard
                   key={date}

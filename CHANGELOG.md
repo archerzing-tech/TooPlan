@@ -2,6 +2,18 @@
 
 All notable changes to the TooPlan project will be documented in this file.
 
+## [0.3.3] — 2026-06-08
+
+### Added
+- 本周视图所有卡片均可手动折叠/展开（之前仅过期日可折叠）
+- 过期日默认折叠，未过期日默认展开
+
+### Changed
+- 提醒时间设置由下拉选择改为原生 `<input type="time">`，Android 上弹出系统表盘时钟选择器
+
+### Fixed
+- 周视图展开状态的卡片头部缺少 onClick，导致无法点击折叠
+
 ## [0.3.2] — 2026-06-08
 
 ### Fixed
