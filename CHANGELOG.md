@@ -2,6 +2,13 @@
 
 All notable changes to the TooPlan project will be documented in this file.
 
+## [0.3.1] — 2026-06-08
+
+### Fixed
+- 修复 Android 13+ 启动时因缺少 POST_NOTIFICATIONS 权限导致的闪退
+- 加固 crypto.randomUUID() 调用，防止部分 WebView 不兼容导致崩溃
+- 修复 checkReminders 异步未捕获 Promise rejection 的潜在风险
+
 ## [0.3.0] — 2026-06-08
 
 ### Added

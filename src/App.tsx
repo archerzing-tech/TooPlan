@@ -670,25 +670,27 @@ function App() {
   useEffect(() => {
     if (items.length === 0 && !hasSeenSampleRef.current) {
       hasSeenSampleRef.current = true;
-      setItems([
-        {
-          id: crypto.randomUUID(),
-          type: "event",
-          text: "欢迎使用 TooPlan! 这是一个示例事件，点击可编辑",
-          date: getToday(),
-          createdAt: Date.now(),
-          sortOrder: 0,
-        },
-        {
-          id: crypto.randomUUID(),
-          type: "reminder",
-          text: "这是一个提醒示例，可设置具体时间",
-          date: getToday(),
-          time: getNowTime(),
-          createdAt: Date.now(),
-          sortOrder: 1000,
-        },
-      ]);
+      try {
+        setItems([
+          {
+            id: crypto.randomUUID(),
+            type: "event",
+            text: "欢迎使用 TooPlan! 这是一个示例事件，点击可编辑",
+            date: getToday(),
+            createdAt: Date.now(),
+            sortOrder: 0,
+          },
+          {
+            id: crypto.randomUUID(),
+            type: "reminder",
+            text: "这是一个提醒示例，可设置具体时间",
+            date: getToday(),
+            time: getNowTime(),
+            createdAt: Date.now(),
+            sortOrder: 1000,
+          },
+        ]);
+      } catch {}
     }
   }, [items.length]);
 
@@ -791,7 +793,6 @@ function App() {
     // Hide clone to detect element under finger
     if (cloneRef.current) cloneRef.current.style.display = "none";
     const el = document.elementFromPoint(x, y);
-    if (cloneRef.current) cloneRef.current.style.display = "none";
 
     if (touchState.current.active && dragIdValue) {
       const itemEl = el?.closest("[data-item-id]") as HTMLElement | null;
@@ -941,11 +942,11 @@ function App() {
       }
     };
 
-    // Run initial check
-    checkReminders();
+    // Run initial check (catch any unhandled promise rejection)
+    checkReminders().catch(() => {});
 
     // Check every 30 seconds
-    const interval = setInterval(checkReminders, 30_000);
+    const interval = setInterval(() => { checkReminders().catch(() => {}); }, 30_000);
     return () => clearInterval(interval);
   }, []);
 
