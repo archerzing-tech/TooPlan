@@ -76,6 +76,22 @@ function isItemExpired(item: PlanItem): boolean {
   return isDateBeforeToday(item.date);
 }
 
+/* ──────────── ID generator (polyfill for older WebView) ──────────── */
+
+function generateId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    try {
+      return crypto.randomUUID();
+    } catch {}
+  }
+  // Fallback for Android WebView < 92 or other incompatible environments
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 /* ──────────── Urgency / Color helpers ──────────── */
 
 type Urgency = "normal" | "warning" | "danger" | "expired";
@@ -636,7 +652,7 @@ function migrateOldData(): PlanItem[] {
     const old = JSON.parse(localStorage.getItem("tooplan-events") || "null");
     if (Array.isArray(old)) {
       const migrated: PlanItem[] = old.map((e: any, idx: number) => ({
-        id: e.id || crypto.randomUUID(),
+        id: e.id || generateId(),
         type: "event",
         text: e.text || "",
         date: e.date || getToday(),
@@ -673,7 +689,7 @@ function App() {
       try {
         setItems([
           {
-            id: crypto.randomUUID(),
+            id: generateId(),
             type: "event",
             text: "欢迎使用 TooPlan! 这是一个示例事件，点击可编辑",
             date: getToday(),
@@ -681,7 +697,7 @@ function App() {
             sortOrder: 0,
           },
           {
-            id: crypto.randomUUID(),
+            id: generateId(),
             type: "reminder",
             text: "这是一个提醒示例，可设置具体时间",
             date: getToday(),
@@ -893,52 +909,60 @@ function App() {
   };
 
   useEffect(() => {
+    // Check if running on Android < 13 where notification plugin crashes (POST_NOTIFICATIONS not available)
+    const ANDROID_UA_MATCH = navigator.userAgent.match(/Android\s(\d+)/);
+    const IS_OLD_ANDROID = ANDROID_UA_MATCH !== null && parseInt(ANDROID_UA_MATCH[1], 10) < 13;
+
     let permissionGranted = false;
 
     const checkReminders = async () => {
-      const currentItems = itemsRef.current;
+      try {
+        const currentItems = itemsRef.current;
 
-      // Clean up: if a previously notified reminder was rebuilt to a future time, allow it to notify again
-      let dirty = false;
-      for (const id of notifiedRef.current) {
-        const item = currentItems.find((i) => i.id === id);
-        if (item && !isItemExpired(item)) {
-          notifiedRef.current.delete(id);
-          dirty = true;
+        // Clean up: if a previously notified reminder was rebuilt to a future time, allow it to notify again
+        let dirty = false;
+        for (const id of notifiedRef.current) {
+          const item = currentItems.find((i) => i.id === id);
+          if (item && !isItemExpired(item)) {
+            notifiedRef.current.delete(id);
+            dirty = true;
+          }
         }
-      }
-      if (dirty) persistNotified();
+        if (dirty) persistNotified();
 
-      for (const item of currentItems) {
-        if (item.type === "reminder" && item.time && !notifiedRef.current.has(item.id) && isItemExpired(item)) {
-          if (!permissionGranted) {
-            try {
-              const granted = await isPermissionGranted();
-              if (!granted) {
-                const perm = await requestPermission();
-                permissionGranted = perm === "granted";
-              } else {
-                permissionGranted = true;
+        for (const item of currentItems) {
+          if (item.type === "reminder" && item.time && !notifiedRef.current.has(item.id) && isItemExpired(item)) {
+            if (!permissionGranted && !IS_OLD_ANDROID) {
+              try {
+                const granted = await isPermissionGranted();
+                if (!granted) {
+                  const perm = await requestPermission();
+                  permissionGranted = perm === "granted";
+                } else {
+                  permissionGranted = true;
+                }
+              } catch {
+                // Not running in Tauri context or Android < 13
+                continue;
               }
-            } catch {
-              // Not running in Tauri context
-              continue;
             }
-          }
 
-          if (permissionGranted) {
-            try {
-              await sendNotification({
-                title: "⏰ 提醒到期",
-                body: item.text,
-              });
-              notifiedRef.current.add(item.id);
-              persistNotified();
-            } catch {
-              // Notification failed, skip
+            if (permissionGranted) {
+              try {
+                await sendNotification({
+                  title: "⏰ 提醒到期",
+                  body: item.text,
+                });
+                notifiedRef.current.add(item.id);
+                persistNotified();
+              } catch {
+                // Notification failed, skip
+              }
             }
           }
         }
+      } catch {
+        // Entire check failed (e.g. native plugin crash), silently skip
       }
     };
 
@@ -963,7 +987,7 @@ function App() {
     const maxOrder = dayItems.reduce((max, e) => Math.max(max, e.sortOrder), 0);
     const copy: PlanItem = {
       ...original,
-      id: crypto.randomUUID(),
+      id: generateId(),
       createdAt: Date.now(),
       sortOrder: maxOrder + 1000,
     };
@@ -1025,7 +1049,7 @@ function App() {
     const dayItems = items.filter((e) => e.date === date);
     const maxOrder = dayItems.reduce((max, e) => Math.max(max, e.sortOrder), 0);
     const item: PlanItem = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       type: newModalType,
       text: trimmed,
       date,
@@ -1449,7 +1473,7 @@ function App() {
               if (futurePickerText.trim()) {
                 const trimmed = futurePickerText.trim();
                 const item: PlanItem = {
-                  id: crypto.randomUUID(),
+                  id: generateId(),
                   type: futurePickerType,
                   text: trimmed,
                   date: futurePickerDate,
@@ -1494,7 +1518,7 @@ function App() {
               if (futurePickerText.trim()) {
                 const trimmed = futurePickerText.trim();
                 const item: PlanItem = {
-                  id: crypto.randomUUID(),
+                  id: generateId(),
                   type: futurePickerType,
                   text: trimmed,
                   date: futurePickerDate,

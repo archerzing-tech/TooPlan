@@ -2,6 +2,14 @@
 
 All notable changes to the TooPlan project will be documented in this file.
 
+## [0.3.2] — 2026-06-08
+
+### Fixed
+- **通知插件在 Android < 13 上原生崩溃** — lib.rs 中条件编译，Android 构建不初始化 tauri-plugin-notification（因其 Kotlin 代码引用不存在的 POST_NOTIFICATIONS 常量抛出 NoSuchFieldError）
+- **crypto.randomUUID() 在旧 WebView 上不可用** — 替换为 generateId() polyfill，Math.random() 兜底
+- checkReminders 增加 Android 版本检测（UA 解析），Android < 13 跳过通知 API 调用
+- checkReminders 整个函数体额外 try-catch 包裹，防止原生异常逃逸
+
 ## [0.3.1] — 2026-06-08
 
 ### Fixed
